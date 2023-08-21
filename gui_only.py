@@ -4,17 +4,19 @@ from tktooltip import ToolTip
 from tkcalendar import DateEntry
 from tktimepicker import SpinTimePickerModern
 from tktimepicker import constants
-import configparser, os, horizon_functions, logging, sys
+import configparser, os, horizon_functions, logging, sys,warnings, keyring,requests
 from logging.handlers import RotatingFileHandler
 
+application_name = "hgidt"
+requests.packages.urllib3.disable_warnings()
 #region logging
 # we need to have some logging in here 
-LOG_FILE = "hgidt.log"
+LOG_FILE = application_name+".log"
 # Configure logging with rotating log files
 log_handler = RotatingFileHandler(LOG_FILE, maxBytes=1024*1024, backupCount=3)
 log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 log_handler.setFormatter(log_formatter)
-logger = logging.getLogger('hgidt')
+logger = logging.getLogger(application_name)
 logger.addHandler(log_handler)
 logger.setLevel(logging.INFO)
 
@@ -28,51 +30,178 @@ sys.excepthook = exception_handler
 
 #region configuration
 # Load the config file if one exists
-CONFIG_FILE = 'config.ini'
+CONFIG_FILE = application_name+'_config.ini'
 config = configparser.ConfigParser()
 config.read(CONFIG_FILE)
 
-config_username = None
-config_domain = None
-config_server_name = None
-config_password = None
 config_url= None
+config_password = None
 
 if 'UserInfo' in config:
     config_username = config.get('UserInfo', 'Username')
     config_domain = config.get('UserInfo', 'Domain')
     config_server_name = config.get('UserInfo', 'ServerName')
+else:
+    config_username = None
+    config_domain = None
+    config_server_name = None
+if 'Pods' in config:
+    config_pods_data = config.get('Pods', 'Pods')
+    config_pods = config_pods_data.split(",")
+    print(config_pods)
+else:
+    config_pods = []
+if 'Connection_Servers' in config:
+    config_connection_servers_data = config.get('Connection_Servers', 'Connection_Servers')
+    config_connection_servers = eval(config_connection_servers_data)
+    print(config_connection_servers)
+else:
+    config_connection_servers = []
+
+# Get password
+try:
+    config_password = keyring.get_password(application_name, config_username)
+    logger.info("Password retreived from credentials store")
+except keyring.errors.PasswordDeleteError:
+    logger.error("Password not found or could not be retreived")
+
 #endregion
 
 #region Configuration related defs
 
-def write_config(username, domain, server_name):
-    config = configparser.ConfigParser()
-    config['UserInfo'] = {'Username': username, 'Domain': domain, 'ServerName': server_name}
-    with open(CONFIG_FILE, 'w') as configfile:
-        config.write(configfile)
+# function Get-HorizonCloudPodDetails {
+#     param(
+#         $accesstoken,
+#         $ConnectionServerURL
+#     )
+#     send-status -Status "INFORMATIONAL" -message "Getting Horizon Cloud Pod details"
+#     $CloudPodDetails = @()
+#     $pods = Get-HorizonRestData -accessToken $accesstoken -ConnectionServerURL $ConnectionServerURL -RestMethod "federation/v1/pods"
+#     foreach ($pod in $pods) {
+#         $PodName = $pod.name
+#         send-status -Status "INFORMATIONAL" -message "Getting details for $podname"
+#         $restmethod = "federation/v1/pods/" + $pod.id + "/endpoints"
+#         $PodDetails = Get-HorizonRestData -accessToken $accesstoken -ConnectionServerURL $ConnectionServerURL -RestMethod $restmethod
+#         foreach ($PodDetail in $PodDetails) {
+#             $name = $PodDetail.name 
+#             send-status -Status "INFORMATIONAL" -message "Creating object with details for $name"
+#             $server_address = $PodDetail.server_address
+#             $ServerDNS = ($server_address.Replace("https://", "")).split(":")[0]
+#             $DetailObject = [PSCustomObject]@{
+#                 PodName   = $PodName
+#                 Name      = $name
+#                 ServerDNS = $ServerDNS
+#             }
+#             $CloudPodDetails += $DetailObject
+#         }
+#     }
+#     return $CloudPodDetails
+# }
 
-def read_config():
-    config = configparser.ConfigParser()
-    config.read(CONFIG_FILE)
-    if 'UserInfo' in config:
-        config_username = config.get('UserInfo', 'Username')
-        config_domain = config.get('UserInfo', 'Domain')
-        config_server_name = config.get('UserInfo', 'ServerName')
-        print(config_username)
-        print(config_domain)
-        print(config_server_name)
-        # return config_username, config_domain, config_server_name
-        config_username_textbox.insert(tk.END, config_username)
-        config_domain_textbox.insert(tk.END, config_domain)
-        config_conserver_textbox.insert(tk.END, config_server_name)
+# function Get-HorizonNonCloudPodDetails {
+#     param(
+#         $accesstoken,
+#         $ConnectionServerURL,
+#         $ServerName
+#     )
+#     send-status -Status "INFORMATIONAL" -message "Getting Horizon Non Cloud Pod details"
+#     $EnvDetails = Get-HorizonRestData -accessToken $accesstoken -ConnectionServerURL $ConnectionServerURL -RestMethod "config/v2/environment-properties"
+#     $ConDetails = Get-HorizonRestData -accessToken $accesstoken -ConnectionServerURL $ConnectionServerURL -RestMethod "monitor/v2/connection-servers"
+#     $PodName = $EnvDetails.cluster_name
+#     send-status -Status "INFORMATIONAL" -message "Getting details for $podname"
+#     $PodDetails = @()
+#     foreach ($ConDetail in $ConDetails) {
+#         $name = $ConDetail.name
+#         send-status -Status "INFORMATIONAL" -message "Creating object with details for $name"
+#         $ServerDNS = $servername.replace(($servername.split(".")[0]), $name)
+#         send-status -Status "INFORMATIONAL" -message "Server DNS should be $ServerDNS"
+#         $DetailObject = [PSCustomObject]@{
+#             PodName   = $PodName
+#             Name      = $name
+#             ServerDNS = $ServerDNS
+#         }
+#         $PodDetails += $DetailObject
+#     }
+#     return $PodDetails
+# }
+
+
+
+
+
+
+def build_pod_info(hvconnectionobj):
+    federation = horizon_functions.Federation(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+    config = horizon_functions.Config(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+    monitor = horizon_functions.Monitor(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token) 
+    cpa_status = federation.get_cloud_pod_federation()['connection_server_statuses'][0]['status']
+    config_pods.clear()
+    config_connection_servers.clear()
+    if cpa_status == "ENABLED":
+        pods = federation.get_pods()
+        for pod in pods:
+            pod_details = federation.get_pod(pod_id=pod['id'])
+            print(pod_details)
     else:
-        return None
+        env_details = config.get_environment_properties()
+        connection_servers_details = monitor.connection_servers()
+        pod_name = env_details['cluster_name']
+        # pod["Name"] = pod_name
+        config_pods.append(pod_name)
+        for conserver in connection_servers_details:
+            conserver_name = conserver['name']
+            if len(conserver_name.split(".")) > 1:
+                conserver_dns = conserver_name.split('.')[0]
+            else:
+                dns_domain = config_server_name.replace((config_server_name.split(".")[0]), "")
+                conserver_dns = conserver_name+dns_domain
+            conserver_details = {}
+            conserver_details['PodName'] = pod_name
+            conserver_details['Name'] = conserver_name
+            conserver_details['ServerDNS'] = conserver_dns
+            config_connection_servers.append(conserver_details)
 
-def reset_config():
-    config = configparser.ConfigParser()
-    with open(CONFIG_FILE, 'w') as configfile:
-        config.write(configfile)
+
+# def write_config(username, domain, server_name):
+#     config = configparser.ConfigParser()
+#     try:
+#         config['UserInfo'] = {'Username': username, 'Domain': domain, 'ServerName': server_name}
+#         config['Pods'] = {'Pods' : config_pods}
+#         config['Connection_Servers'] = {'Connection_Servers' : config_connection_servers}
+#         with open(CONFIG_FILE, 'w') as configfile:
+#             config.write(configfile)
+#     except:
+#         logger.error("Configuration could not be saved")
+#     try:
+#         keyring.set_password(application_name, config_username, config_password)
+#         logger.info("Password saved to credentials store")
+#     except keyring.errors.PasswordDeleteError:
+#         logger.error("Password could not be saved to the credentials store")
+    
+
+# def read_config():
+#     # Get config from file
+#     global config_username, config_password, config_server_name
+#     config = configparser.ConfigParser()
+#     config.read(CONFIG_FILE)
+#     if 'UserInfo' in config:
+#         config_username = config.get('UserInfo', 'Username')
+#         config_domain = config.get('UserInfo', 'Domain')
+#         config_server_name = config.get('UserInfo', 'ServerName')
+#         # return config_username, config_domain, config_server_name
+#         config_username_textbox.insert(tk.END, config_username)
+#         config_domain_textbox.insert(tk.END, config_domain)
+#         config_conserver_textbox.insert(tk.END, config_server_name)
+#     else:
+#         return None
+#     # Get password
+#     try:
+#         global config_password
+#         config_password = keyring.get_password(application_name, config_username)
+#         logger.info("Password retreived from credentials store")
+#     except keyring.errors.PasswordDeleteError:
+#         logger.error("Password not found or could not be retreived")
+
 
 def show_password_dialog():
     password = simpledialog.askstring("Password", "Enter your password:", show='*')
@@ -87,27 +216,43 @@ def show_password_dialog():
 
 def config_save_button_callback():
     logger.info("Saving configuration")
-    username = config_username_textbox.get()
-    domain = config_domain_textbox.get()
-    server_name = config_conserver_textbox.get()
-    global config_username, config_domain, config_server_name
-    if username == config_username_textbox_default_text or domain == config_domain_textbox_default_text or server_name == config_conserver_textbox_default_text:
+    global config_username, config_domain, config_server_name, config_password
+    config_username = config_username_textbox.get()
+    config_domain = config_domain_textbox.get()
+    config_server_name = config_conserver_textbox.get()
+    
+    if config_username == config_username_textbox_default_text or config_domain == config_domain_textbox_default_text or config_server_name == config_conserver_textbox_default_text or config_password == None:
         config_username = None
         config_domain = None
         config_server_name = None
         config_status_label.config(text="Please enter Connection Server, Username and password first.")
     else:
-        write_config(username, domain, server_name)
-        config_username = username
-        config_domain = domain
-        config_server_name = server_name
+        config = configparser.ConfigParser()
+        try:
+            config['UserInfo'] = {'Username': config_username, 'Domain': config_domain, 'ServerName': config_server_name}
+            config['Pods'] = {'Pods' : config_pods}
+            config['Connection_Servers'] = {'Connection_Servers' : config_connection_servers}
+            with open(CONFIG_FILE, 'w') as configfile:
+                config.write(configfile)
+        except:
+            logger.error("Configuration could not be saved")
+        try:
+            keyring.set_password(application_name, config_username, config_password)
+            logger.info("Password saved to credentials store")
+        except keyring.errors.PasswordDeleteError:
+            logger.error("Password could not be saved to the credentials store")
         config_status_label.config(text="Configuration saved")
         logger.info("Configuration saved")
 
 def config_reset_button_callback():
     logger.info("Resetting configuration")
-    reset_config()
-    global config_username, config_domain, config_server_name
+    global config_username, config_domain, config_server_name, config_password, config_url
+    try:
+        keyring.delete_password(application_name, config_username)
+        logger.info("Password removed from credentials store")
+    except keyring.errors.PasswordDeleteError:
+        logger.error("Credential not found or could not be deleted")
+    
     config_username_textbox.delete(0, tk.END)
     config_username_textbox.insert(tk.END, config_username_textbox_default_text)
     config_username_textbox.config(foreground='grey')
@@ -120,6 +265,10 @@ def config_reset_button_callback():
     config_conserver_textbox.insert(tk.END, config_conserver_textbox_default_text)
     config_conserver_textbox.config(foreground='grey')
     config_server_name = None
+    config_pods.clear()
+    config_connection_servers.clear()
+    del config_password
+    config_password = None
     config_url=None
     config = configparser.ConfigParser()
     with open(CONFIG_FILE, 'w') as configfile:
@@ -133,11 +282,11 @@ def config_test_button_callback():
     logger.info("Testing configuration")
     config_status_label.config(text="Testing configuration")
     refresh_window()
-    config_save_button_callback()
-    print(config_username)
-    print(config_domain)
-    print(config_server_name)
-    if config_username is None or config_domain is None or config_server_name is None:
+    global config_username, config_domain, config_server_name, config_password
+    config_username = config_username_textbox.get()
+    config_domain = config_domain_textbox.get()
+    config_server_name = config_conserver_textbox.get()
+    if config_username is None or config_domain is None or config_server_name is None or config_username == config_username_textbox_default_text or config_domain == config_domain_textbox_default_text or config_server_name == config_conserver_textbox_default_text:
         logger.error("Cannot test due to missing configuration")
         config_status_label.config(text="Not all information is provided, please check the configuration.")
     elif config_password is None:
@@ -149,7 +298,12 @@ def config_test_button_callback():
         hvconnectionobj = horizon_functions.Connection(username = config_username,domain = config_domain,password = config_password,url = config_url)
         try:
             hvconnectionobj.hv_connect()
+            build_pod_info(hvconnectionobj)
+            hvconnectionobj.hv_disconnect()
             logger.info("Sucessfully finished testing configuration")
+            
+            logger.info("Saving configuration since it works")
+            config_save_button_callback()
             config_status_label.config(text="Successfully finished testing configuration")
         except Exception as e:
             config_status_label.config(text="Error testing the connection, see the log file for details")
@@ -183,69 +337,78 @@ root = tk.Tk()
 root.title("Horizon Golden Image Deployment Tool")
 root.geometry("800x660")
 
+style = ttk.Style()
+# style.configure("Centered.TButton", padding=(10, 5))
+# style.configure('Custom.TFrame', background="ghost white")
+
+# root.tk_setPalette(background="ghost white", foreground='black', activeBackground="ghost white", activeForeground='black')
+# root.option_add('*TFrame*background', "ghost white")
+# root.option_add('*TFrame*foreground', 'black')
+
 # Create Canvas
 canvas = tk.Canvas(root)
 canvas.pack(fill="both", expand=True)
+# canvas.configure(bg='blue')
 
 # Create TabControl
 tab_control = ttk.Notebook(canvas)
 tab_control.pack(fill="both", expand=True)
 
+
 # Tab 1 - Desktop Pools
 tab1 = ttk.Frame(tab_control)
 tab_control.add(tab1, text="VDI Pools")
+# tab1.configure(style='Custom.TFrame')
 
 # Place your Tab 1 widgets here
 # Create Buttons
-VDI_Connect_Button = tk.Button(tab1, text="Connect")
-VDI_Connect_Button.place(x=570, y=30, width=160, height=22)
+VDI_Connect_Button = ttk.Button(tab1, text="Connect")
+VDI_Connect_Button.place(x=570, y=30, width=160, height=25)
 
-VDI_Apply_Golden_Image_button = tk.Button(tab1, text="Deploy Golden Image")
-VDI_Apply_Golden_Image_button.place(x=570, y=510, width=160, height=22)
+VDI_Apply_Golden_Image_button = ttk.Button(tab1, text="Deploy Golden Image")
+VDI_Apply_Golden_Image_button.place(x=570, y=510, width=160, height=25)
 
-VDI_Apply_Secondary_Image_button = tk.Button(tab1, text="Apply Secondary Image")
-VDI_Apply_Secondary_Image_button.place(x=570, y=456, width=160, height=22)
+VDI_Apply_Secondary_Image_button = ttk.Button(tab1, text="Apply Secondary Image")
+VDI_Apply_Secondary_Image_button.place(x=570, y=456, width=160, height=25)
 
-VDI_Cancel_Secondary_Image_button = tk.Button(tab1, text="Cancel secondary Image")
-VDI_Cancel_Secondary_Image_button.place(x=570, y=430, width=160, height=22)
+VDI_Cancel_Secondary_Image_button = ttk.Button(tab1, text="Cancel secondary Image")
+VDI_Cancel_Secondary_Image_button.place(x=570, y=430, width=160, height=25)
 
-VDI_Promote_Secondary_Image_button = tk.Button(tab1, text="Promote secondary Image")
-VDI_Promote_Secondary_Image_button.place(x=570, y=483, width=160, height=22)
+VDI_Promote_Secondary_Image_button = ttk.Button(tab1, text="Promote secondary Image")
+VDI_Promote_Secondary_Image_button.place(x=570, y=483, width=160, height=25)
 
 # Create Labels
 VDI_Statusbox_Label = tk.Label(tab1, borderwidth=1, text="Status: Not Connected", justify="right")
 VDI_Statusbox_Label.place(x=430, y=537)
 
-# VDI_timepicker_label = tk.Label(tab1, borderwidth=1, text=":", justify="right")
-# VDI_timepicker_label.place(x=615, y=310)
 
 # Create ComboBoxes
 VDI_DesktopPool_Combobox = ttk.Combobox(tab1)
-VDI_DesktopPool_Combobox.place(x=30, y=30, width=150, height=22)
+VDI_DesktopPool_Combobox.place(x=30, y=30, width=150, height=25)
 ToolTip(VDI_DesktopPool_Combobox, msg="Select the desktop pool to update")
 
 VDI_Golden_Image_Combobox = ttk.Combobox(tab1)
-VDI_Golden_Image_Combobox.place(x=210, y=30, width=150, height=22)
+VDI_Golden_Image_Combobox.place(x=210, y=30, width=150, height=25)
 ToolTip(VDI_Golden_Image_Combobox, msg="Select the new source VM")
 
 VDI_Snapshot_Combobox = ttk.Combobox(tab1)
-VDI_Snapshot_Combobox.place(x=390, y=30, width=150, height=22)
+VDI_Snapshot_Combobox.place(x=390, y=30, width=150, height=25)
 ToolTip(VDI_Snapshot_Combobox, msg="Select the new source Snapshot")
 
 VDI_LofOffPolicy_Combobox = ttk.Combobox(tab1)
-VDI_LofOffPolicy_Combobox.place(x=570, y=110, width=160, height=22)
+VDI_LofOffPolicy_Combobox.place(x=570, y=110, width=160, height=25)
 ToolTip(VDI_LofOffPolicy_Combobox, msg="Select the logoff Policy")
 
 VDI_Memory_ComboBox = ttk.Combobox(tab1)
-VDI_Memory_ComboBox.place(x=570, y=160, width=160, height=22)
+VDI_Memory_ComboBox.place(x=570, y=160, width=160, height=25)
 ToolTip(VDI_Memory_ComboBox, msg="Select the new memory size")
 
 VDI_CPUCount_ComboBox = ttk.Combobox(tab1)
-VDI_CPUCount_ComboBox.place(x=570, y=190, width=160, height=22)
+VDI_CPUCount_ComboBox.place(x=570, y=190, width=160, height=25)
 ToolTip(VDI_CPUCount_ComboBox, msg="Select the new CPU count")
 
 VDI_CoresPerSocket_ComboBox = ttk.Combobox(tab1)
-VDI_CoresPerSocket_ComboBox.place(x=570, y=220, width=160, height=22)
+VDI_CoresPerSocket_ComboBox.place(x=570, y=220, width=160, height=25)
 ToolTip(VDI_CoresPerSocket_ComboBox, msg="Select the number of cores per socket")
 
 # Create Checkboxes
@@ -294,23 +457,24 @@ VDI_TimePicker.place(x=570,y=310)
 #region Tab 2 - RDS Farms
 tab2 = ttk.Frame(tab_control)
 tab_control.add(tab2, text="RDS Farms")
+# tab2.configure(style='Custom.TFrame')
 
 # Place your Tab 2 widgets here
 # create buttons
-RDS_Connect_Button = tk.Button(tab2, text="Connect")
-RDS_Connect_Button.place(x=570, y=30, width=160, height=22)
+RDS_Connect_Button = ttk.Button(tab2, text="Connect")
+RDS_Connect_Button.place(x=570, y=30, width=160, height=25)
 
-RDS_Apply_Golden_Image_button = tk.Button(tab2, text="Deploy Golden Image")
-RDS_Apply_Golden_Image_button.place(x=570, y=510, width=160, height=22)
+RDS_Apply_Golden_Image_button = ttk.Button(tab2, text="Deploy Golden Image")
+RDS_Apply_Golden_Image_button.place(x=570, y=510, width=160, height=25)
 
-RDS_Apply_Secondary_Image_button = tk.Button(tab2, text="Apply Secondary Image")
-RDS_Apply_Secondary_Image_button.place(x=570, y=456, width=160, height=22)
+RDS_Apply_Secondary_Image_button = ttk.Button(tab2, text="Apply Secondary Image")
+RDS_Apply_Secondary_Image_button.place(x=570, y=456, width=160, height=25)
 
-RDS_Cancel_Secondary_Image_button = tk.Button(tab2, text="Cancel secondary Image")
-RDS_Cancel_Secondary_Image_button.place(x=570, y=430, width=160, height=22)
+RDS_Cancel_Secondary_Image_button = ttk.Button(tab2, text="Cancel secondary Image")
+RDS_Cancel_Secondary_Image_button.place(x=570, y=430, width=160, height=25)
 
-RDS_Promote_Secondary_Image_button = tk.Button(tab2, text="Promote secondary Image")
-RDS_Promote_Secondary_Image_button.place(x=570, y=483, width=160, height=22)
+RDS_Promote_Secondary_Image_button = ttk.Button(tab2, text="Promote secondary Image")
+RDS_Promote_Secondary_Image_button.place(x=570, y=483, width=160, height=25)
 
 # Create Labels
 RDS_Statusbox_Label = tk.Label(tab2, borderwidth=1, text="Status: Not Connected", justify="right")
@@ -321,31 +485,31 @@ RDS_Statusbox_Label.place(x=430, y=537)
 
 # Create ComboBoxes
 RDS_DesktopPool_Combobox = ttk.Combobox(tab2)
-RDS_DesktopPool_Combobox.place(x=30, y=30, width=150, height=22)
+RDS_DesktopPool_Combobox.place(x=30, y=30, width=150, height=25)
 ToolTip(RDS_DesktopPool_Combobox, msg="Select the desktop pool to update")
 
 RDS_Golden_Image_Combobox = ttk.Combobox(tab2)
-RDS_Golden_Image_Combobox.place(x=210, y=30, width=150, height=22)
+RDS_Golden_Image_Combobox.place(x=210, y=30, width=150, height=25)
 ToolTip(RDS_Golden_Image_Combobox, msg="Select the new source VM")
 
 RDS_Snapshot_Combobox = ttk.Combobox(tab2)
-RDS_Snapshot_Combobox.place(x=390, y=30, width=150, height=22)
+RDS_Snapshot_Combobox.place(x=390, y=30, width=150, height=25)
 ToolTip(RDS_Snapshot_Combobox, msg="Select the new source Snapshot")
 
 RDS_LofOffPolicy_Combobox = ttk.Combobox(tab2)
-RDS_LofOffPolicy_Combobox.place(x=570, y=110, width=160, height=22)
+RDS_LofOffPolicy_Combobox.place(x=570, y=110, width=160, height=25)
 ToolTip(RDS_LofOffPolicy_Combobox, msg="Select the logoff Policy")
 
 RDS_Memory_ComboBox = ttk.Combobox(tab2)
-RDS_Memory_ComboBox.place(x=570, y=160, width=160, height=22)
+RDS_Memory_ComboBox.place(x=570, y=160, width=160, height=25)
 ToolTip(RDS_Memory_ComboBox, msg="Select the new memory size")
 
 RDS_CPUCount_ComboBox = ttk.Combobox(tab2)
-RDS_CPUCount_ComboBox.place(x=570, y=190, width=160, height=22)
+RDS_CPUCount_ComboBox.place(x=570, y=190, width=160, height=25)
 ToolTip(RDS_CPUCount_ComboBox, msg="Select the new CPU count")
 
 RDS_CoresPerSocket_ComboBox = ttk.Combobox(tab2)
-RDS_CoresPerSocket_ComboBox.place(x=570, y=220, width=160, height=22)
+RDS_CoresPerSocket_ComboBox.place(x=570, y=220, width=160, height=25)
 ToolTip(RDS_CoresPerSocket_ComboBox, msg="Select the number of cores per socket")
 
 # Create Checkboxes
@@ -391,6 +555,7 @@ RDS_TimePicker.place(x=570,y=310)
 #region Tab 3 - Configuration
 tab3 = ttk.Frame(tab_control)
 tab_control.add(tab3, text="Configuration")
+# tab3.configure(style='Custom.TFrame')
 
 # Place your Tab 3 widgets here
 # Create Buttons
@@ -460,6 +625,8 @@ config_pod_combobox.place(x=270, y=50, width=200)
 
 config_conserver_combobox = ttk.Combobox(tab3)
 config_conserver_combobox.place(x=510, y=50, width=200)
+
+
 
 # Create CheckBox
 config_ignore_cert_errors_checkbox = ttk.Checkbutton(tab3, text="Ignore Certificate Errors")
