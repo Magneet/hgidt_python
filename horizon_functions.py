@@ -167,6 +167,60 @@ class Federation:
                 raise "Error: " + str(e)
             else:
                 return response.json()
+            
+    def get_pod_endpoints(self, pod_id:str) -> list:
+        """Lists all the pod endpoints for the given pod.
+
+        Requires pod_id as a string
+        Available for Horizon 8 2012 and later."""
+        response = requests.get(f'{self.url}/rest/federation/v1/pods/{pod_id}/endpoints', verify=False,  headers=self.access_token)
+        if response.status_code == 400:
+            if "error_messages" in response.json():
+                error_message = (response.json())["error_messages"]
+            else:
+                error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        if response.status_code == 404:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        elif response.status_code == 403:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        elif response.status_code != 200:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        else:
+            try:
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise "Error: " + str(e)
+            else:
+                return response.json()
+
+    def get_pod_endpoint(self, pod_id:str, endpoint_id:str) -> dict:
+        """Lists all the pod endpoints for the given pod.
+
+        Requires pod_id and endpoint_id as a string
+        Available for Horizon 8 2012 and later."""
+        response = requests.get(f'{self.url}/rest/federation/v1/pods/{pod_id}/endpoints/{endpoint_id}', verify=False,  headers=self.access_token)
+        if response.status_code == 400:
+            if "error_messages" in response.json():
+                error_message = (response.json())["error_messages"]
+            else:
+                error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        if response.status_code == 404:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        elif response.status_code == 403:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        elif response.status_code != 200:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        else:
+            try:
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise "Error: " + str(e)
+            else:
+                return response.json()
 
 class Monitor:
     def __init__(self, url: str, access_token: dict):

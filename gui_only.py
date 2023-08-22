@@ -4,7 +4,7 @@ from tktooltip import ToolTip
 from tkcalendar import DateEntry
 from tktimepicker import SpinTimePickerModern
 from tktimepicker import constants
-import configparser, os, horizon_functions, logging, sys,warnings, keyring,requests
+import configparser, os, horizon_functions, logging, sys,warnings, keyring,requests, json
 from logging.handlers import RotatingFileHandler
 
 application_name = "hgidt"
@@ -25,7 +25,7 @@ def exception_handler(exc_type, exc_value, exc_traceback):
     logger.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
 
 # Set the custom exception handler
-sys.excepthook = exception_handler
+# sys.excepthook = exception_handler
 #endregion
 
 #region configuration
@@ -47,14 +47,12 @@ else:
     config_server_name = None
 if 'Pods' in config:
     config_pods_data = config.get('Pods', 'Pods')
-    config_pods = config_pods_data.split(",")
-    print(config_pods)
+    config_pods = eval(config_pods_data)
 else:
     config_pods = []
 if 'Connection_Servers' in config:
     config_connection_servers_data = config.get('Connection_Servers', 'Connection_Servers')
     config_connection_servers = eval(config_connection_servers_data)
-    print(config_connection_servers)
 else:
     config_connection_servers = []
 
@@ -69,67 +67,6 @@ except keyring.errors.PasswordDeleteError:
 
 #region Configuration related defs
 
-# function Get-HorizonCloudPodDetails {
-#     param(
-#         $accesstoken,
-#         $ConnectionServerURL
-#     )
-#     send-status -Status "INFORMATIONAL" -message "Getting Horizon Cloud Pod details"
-#     $CloudPodDetails = @()
-#     $pods = Get-HorizonRestData -accessToken $accesstoken -ConnectionServerURL $ConnectionServerURL -RestMethod "federation/v1/pods"
-#     foreach ($pod in $pods) {
-#         $PodName = $pod.name
-#         send-status -Status "INFORMATIONAL" -message "Getting details for $podname"
-#         $restmethod = "federation/v1/pods/" + $pod.id + "/endpoints"
-#         $PodDetails = Get-HorizonRestData -accessToken $accesstoken -ConnectionServerURL $ConnectionServerURL -RestMethod $restmethod
-#         foreach ($PodDetail in $PodDetails) {
-#             $name = $PodDetail.name 
-#             send-status -Status "INFORMATIONAL" -message "Creating object with details for $name"
-#             $server_address = $PodDetail.server_address
-#             $ServerDNS = ($server_address.Replace("https://", "")).split(":")[0]
-#             $DetailObject = [PSCustomObject]@{
-#                 PodName   = $PodName
-#                 Name      = $name
-#                 ServerDNS = $ServerDNS
-#             }
-#             $CloudPodDetails += $DetailObject
-#         }
-#     }
-#     return $CloudPodDetails
-# }
-
-# function Get-HorizonNonCloudPodDetails {
-#     param(
-#         $accesstoken,
-#         $ConnectionServerURL,
-#         $ServerName
-#     )
-#     send-status -Status "INFORMATIONAL" -message "Getting Horizon Non Cloud Pod details"
-#     $EnvDetails = Get-HorizonRestData -accessToken $accesstoken -ConnectionServerURL $ConnectionServerURL -RestMethod "config/v2/environment-properties"
-#     $ConDetails = Get-HorizonRestData -accessToken $accesstoken -ConnectionServerURL $ConnectionServerURL -RestMethod "monitor/v2/connection-servers"
-#     $PodName = $EnvDetails.cluster_name
-#     send-status -Status "INFORMATIONAL" -message "Getting details for $podname"
-#     $PodDetails = @()
-#     foreach ($ConDetail in $ConDetails) {
-#         $name = $ConDetail.name
-#         send-status -Status "INFORMATIONAL" -message "Creating object with details for $name"
-#         $ServerDNS = $servername.replace(($servername.split(".")[0]), $name)
-#         send-status -Status "INFORMATIONAL" -message "Server DNS should be $ServerDNS"
-#         $DetailObject = [PSCustomObject]@{
-#             PodName   = $PodName
-#             Name      = $name
-#             ServerDNS = $ServerDNS
-#         }
-#         $PodDetails += $DetailObject
-#     }
-#     return $PodDetails
-# }
-
-
-
-
-
-
 def build_pod_info(hvconnectionobj):
     federation = horizon_functions.Federation(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
     config = horizon_functions.Config(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
@@ -140,8 +77,17 @@ def build_pod_info(hvconnectionobj):
     if cpa_status == "ENABLED":
         pods = federation.get_pods()
         for pod in pods:
-            pod_details = federation.get_pod(pod_id=pod['id'])
-            print(pod_details)
+            pod_name = pod['name']
+            config_pods.append(pod_name)
+            pod_endpoints = federation.get_pod_endpoints(pod_id=pod['id'])
+            for pod_endpoint in pod_endpoints:
+                conserver_dns = (pod_endpoint['server_address'].replace("https://","")).split(":")[0]
+                conserver_name = conserver_dns.split(".")[0]
+                conserver_details = {}
+                conserver_details['PodName'] = pod_name
+                conserver_details['Name'] = conserver_name
+                conserver_details['ServerDNS'] = conserver_dns
+                config_connection_servers.append(conserver_details)
     else:
         env_details = config.get_environment_properties()
         connection_servers_details = monitor.connection_servers()
@@ -301,7 +247,6 @@ def config_test_button_callback():
             build_pod_info(hvconnectionobj)
             hvconnectionobj.hv_disconnect()
             logger.info("Sucessfully finished testing configuration")
-            
             logger.info("Saving configuration since it works")
             config_save_button_callback()
             config_status_label.config(text="Successfully finished testing configuration")
@@ -622,9 +567,19 @@ config_status_label.place(x=30, y=290)
 # Create ComboBoxes
 config_pod_combobox = ttk.Combobox(tab3)
 config_pod_combobox.place(x=270, y=50, width=200)
+config_pod_combobox['values'] = config_pods
+config_pod_combobox.current(0)
 
 config_conserver_combobox = ttk.Combobox(tab3)
 config_conserver_combobox.place(x=510, y=50, width=200)
+config_conserver_combobox_selected_name = config_pod_combobox.get()
+config_conserver_combobox_data = [item for item in config_connection_servers if item["PodName"] == config_conserver_combobox_selected_name]
+config_conserver_combobox['values'] = [item["Name"] for item in config_conserver_combobox_data]
+config_conserver_combobox.current(0)
+config_conserver_combobox_selectedname = config_conserver_combobox.get()
+config_conserver_combobox_selected_ServerDNS=[item for item in config_connection_servers if item["Name"] == config_conserver_combobox_selectedname][0]["ServerDNS"]
+config_conserver_textbox.delete(0, tk.END) 
+config_conserver_textbox.insert(tk.END,config_conserver_combobox_selected_ServerDNS)
 
 
 
