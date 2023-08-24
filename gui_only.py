@@ -41,10 +41,19 @@ if 'UserInfo' in config:
     config_username = config.get('UserInfo', 'Username')
     config_domain = config.get('UserInfo', 'Domain')
     config_server_name = config.get('UserInfo', 'ServerName')
+    config_ignore_ssl_errors = config.getboolean('UserInfo', 'Ignore_SSL_Errors')
+    config_save_password = config.getboolean('UserInfo', 'Save_Password')
+    try:
+        config_password = keyring.get_password(application_name, config_username)
+        logger.info("Password retreived from credentials store")
+    except keyring.errors.PasswordDeleteError:
+        logger.error("Password not found or could not be retreived")
 else:
     config_username = None
     config_domain = None
     config_server_name = None
+    config_ignore_ssl_errors = False
+    config_save_password = False
 if 'Pods' in config:
     config_pods_data = config.get('Pods', 'Pods')
     config_pods = eval(config_pods_data)
@@ -57,11 +66,7 @@ else:
     config_connection_servers = []
 
 # Get password
-try:
-    config_password = keyring.get_password(application_name, config_username)
-    logger.info("Password retreived from credentials store")
-except keyring.errors.PasswordDeleteError:
-    logger.error("Password not found or could not be retreived")
+
 
 #endregion
 
@@ -160,14 +165,47 @@ def show_password_dialog():
 
 #region defs for button handling of configuration tab
 
+def config_reset_stored_password():
+    global config_password
+    try:
+        keyring.delete_password(application_name, config_username)
+        logger.info("Password removed from credentials store")
+    except keyring.errors.PasswordDeleteError:
+        logger.error("Credential not found or could not be deleted")
+
+def config_ignore_cert_errors_checkbox_callback():
+    print("bla")
+
+def config_save_password_checkbox_callback():
+    global config_save_password, config_server_name
+    if config_save_password_checkbox_var.get() == False:
+        config_save_password = False
+        config_reset_stored_password()
+    else:
+        config_save_password = True
+    if config_server_name != None:
+        config_save_button_callback()
+
+def config_pod_combobox_callback():
+    global config_server_name
+    config_conserver_combobox.config(foreground='black')
+    config_conserver_combobox_selected_name = config_pod_combobox.get()
+    config_conserver_combobox_data = [item for item in config_connection_servers if item["PodName"] == config_conserver_combobox_selected_name]
+    config_conserver_combobox['values'] = [item["ServerDNS"] for item in config_conserver_combobox_data]
+    config_conserver_combobox.current(0)
+
+def config_conserver_combobox_callback():
+    global config_server_name
+    config_server_name = config_conserver_combobox.get()
+
 def config_save_button_callback():
     logger.info("Saving configuration")
     global config_username, config_domain, config_server_name, config_password
     config_username = config_username_textbox.get()
     config_domain = config_domain_textbox.get()
-    config_server_name = config_conserver_textbox.get()
-    
-    if config_username == config_username_textbox_default_text or config_domain == config_domain_textbox_default_text or config_server_name == config_conserver_textbox_default_text or config_password == None:
+    config_server_name = config_conserver_combobox.get()
+    print(config_username)
+    if config_username == config_username_textbox_default_text or config_domain == config_domain_textbox_default_text or config_server_name == config_conserver_combobox_default_text or config_password == None:
         config_username = None
         config_domain = None
         config_server_name = None
@@ -175,30 +213,30 @@ def config_save_button_callback():
     else:
         config = configparser.ConfigParser()
         try:
-            config['UserInfo'] = {'Username': config_username, 'Domain': config_domain, 'ServerName': config_server_name}
+            config['UserInfo'] = {'Username': config_username, 'Domain': config_domain, 'ServerName': config_server_name, 'Ignore_SSL_Errors': str(config_ignore_cert_errors_checkbox_var.get()), 'Save_Password': str(config_save_password_checkbox_var.get())}
             config['Pods'] = {'Pods' : config_pods}
             config['Connection_Servers'] = {'Connection_Servers' : config_connection_servers}
             with open(CONFIG_FILE, 'w') as configfile:
                 config.write(configfile)
         except:
             logger.error("Configuration could not be saved")
-        try:
-            keyring.set_password(application_name, config_username, config_password)
-            logger.info("Password saved to credentials store")
-        except keyring.errors.PasswordDeleteError:
-            logger.error("Password could not be saved to the credentials store")
+        if config_save_password == True:
+            try:
+                keyring.set_password(application_name, config_username, config_password)
+                logger.info("Password saved to credentials store")
+            except keyring.errors.PasswordDeleteError:
+                logger.error("Password could not be saved to the credentials store")
         config_status_label.config(text="Configuration saved")
         logger.info("Configuration saved")
 
 def config_reset_button_callback():
     logger.info("Resetting configuration")
-    global config_username, config_domain, config_server_name, config_password, config_url
-    try:
-        keyring.delete_password(application_name, config_username)
-        logger.info("Password removed from credentials store")
-    except keyring.errors.PasswordDeleteError:
-        logger.error("Credential not found or could not be deleted")
-    
+    global config_username, config_domain, config_server_name,config_password, config_url
+    config_reset_stored_password()
+    del config_password
+    config_password = None
+    config_ignore_cert_errors_checkbox_var.set(False)
+    config_save_password_checkbox_var.set(False)
     config_username_textbox.delete(0, tk.END)
     config_username_textbox.insert(tk.END, config_username_textbox_default_text)
     config_username_textbox.config(foreground='grey')
@@ -207,14 +245,16 @@ def config_reset_button_callback():
     config_domain_textbox.insert(tk.END, config_domain_textbox_default_text)
     config_domain_textbox.config(foreground='grey')
     config_domain = None
-    config_conserver_textbox.delete(0, tk.END)
-    config_conserver_textbox.insert(tk.END, config_conserver_textbox_default_text)
-    config_conserver_textbox.config(foreground='grey')
+    config_conserver_combobox['values'] = [] 
+    config_conserver_combobox.set(config_conserver_combobox_default_text)
+    config_conserver_combobox.config(foreground='grey')
+    config_pod_combobox['values'] = [] 
+    config_pod_combobox.set(config_pod_combobox_default_text)
+    config_pod_combobox.config(foreground='grey')
     config_server_name = None
     config_pods.clear()
     config_connection_servers.clear()
-    del config_password
-    config_password = None
+
     config_url=None
     config = configparser.ConfigParser()
     with open(CONFIG_FILE, 'w') as configfile:
@@ -231,8 +271,8 @@ def config_test_button_callback():
     global config_username, config_domain, config_server_name, config_password
     config_username = config_username_textbox.get()
     config_domain = config_domain_textbox.get()
-    config_server_name = config_conserver_textbox.get()
-    if config_username is None or config_domain is None or config_server_name is None or config_username == config_username_textbox_default_text or config_domain == config_domain_textbox_default_text or config_server_name == config_conserver_textbox_default_text:
+    config_server_name = config_conserver_combobox.get()
+    if config_username is None or config_domain is None or config_server_name is None or config_username == config_username_textbox_default_text or config_domain == config_domain_textbox_default_text or config_server_name == config_conserver_combobox_default_text:
         logger.error("Cannot test due to missing configuration")
         config_status_label.config(text="Not all information is provided, please check the configuration.")
     elif config_password is None:
@@ -517,19 +557,6 @@ config_reset_button.place(x=30, y=198)
 config_test_credential_button = ttk.Button(tab3, text="Test Credentials",command=config_test_button_callback)
 config_test_credential_button.place(x=30, y=255)
 
-# Create TextBoxes
-config_conserver_textbox = ttk.Entry(tab3)
-config_conserver_textbox_default_text= "Enter Connectionserver DNS"
-if config_server_name is not None:
-    config_conserver_textbox.insert(tk.END, config_server_name)
-    config_conserver_textbox.config(foreground='black')
-else:
-    config_conserver_textbox.insert(tk.END, config_conserver_textbox_default_text)
-    config_conserver_textbox.config(foreground='grey')
-config_conserver_textbox.bind("<FocusIn>", lambda event, var=config_conserver_textbox_default_text: textbox_handle_focus_in(event, var))
-config_conserver_textbox.bind("<FocusOut>" , lambda event, var=config_conserver_textbox_default_text: textbox_handle_focus_out(event, var))
-config_conserver_textbox.place(x=30, y=50, width=200)
-
 config_username_textbox = ttk.Entry(tab3)
 config_username_textbox_default_text= "UserName"
 if config_username is not None:
@@ -567,30 +594,42 @@ config_status_label.place(x=30, y=290)
 # Create ComboBoxes
 config_pod_combobox = ttk.Combobox(tab3)
 config_pod_combobox.place(x=270, y=50, width=200)
-config_pod_combobox['values'] = config_pods
-config_pod_combobox.current(0)
+config_pod_combobox_default_text = "Test the connection first"
+if len(config_pods) >= 1 :
+    config_pod_combobox['values'] = config_pods
+    config_pod_combobox.current(0)
+else:
+    config_pod_combobox.set(config_pod_combobox_default_text)
+    config_pod_combobox.state(["disabled"])
 
 config_conserver_combobox = ttk.Combobox(tab3)
-config_conserver_combobox.place(x=510, y=50, width=200)
-config_conserver_combobox_selected_name = config_pod_combobox.get()
-config_conserver_combobox_data = [item for item in config_connection_servers if item["PodName"] == config_conserver_combobox_selected_name]
-config_conserver_combobox['values'] = [item["Name"] for item in config_conserver_combobox_data]
-config_conserver_combobox.current(0)
-config_conserver_combobox_selectedname = config_conserver_combobox.get()
-config_conserver_combobox_selected_ServerDNS=[item for item in config_connection_servers if item["Name"] == config_conserver_combobox_selectedname][0]["ServerDNS"]
-config_conserver_textbox.delete(0, tk.END) 
-config_conserver_textbox.insert(tk.END,config_conserver_combobox_selected_ServerDNS)
-
-
+config_conserver_combobox.place(x=30, y=50, width=200)
+config_conserver_combobox_default_text = "Enter Connectionserver DNS"
+if len(config_pods) >= 1 :
+    config_pod_combobox_callback()
+else:
+    config_conserver_combobox.set(config_conserver_combobox_default_text)
+config_conserver_combobox.bind("<FocusIn>", lambda event, var=config_conserver_combobox_default_text: textbox_handle_focus_in(event, var))
+config_conserver_combobox.bind("<FocusOut>" , lambda event, var=config_conserver_combobox_default_text: textbox_handle_focus_out(event, var))
 
 # Create CheckBox
-config_ignore_cert_errors_checkbox = ttk.Checkbutton(tab3, text="Ignore Certificate Errors")
-config_ignore_cert_errors_checkbox.place(x=30, y=175)
+config_ignore_cert_errors_checkbox_var = tk.BooleanVar()
+config_ignore_cert_errors_checkbox = ttk.Checkbutton(tab3, text="Ignore Certificate Errors", variable=config_ignore_cert_errors_checkbox_var, command=config_ignore_cert_errors_checkbox_callback)
+config_ignore_cert_errors_checkbox.place(x=30, y=350)
+config_ignore_cert_errors_checkbox_var.set(config_ignore_ssl_errors)
+
+config_save_password_checkbox_var = tk.BooleanVar()
+config_save_password_checkbox = ttk.Checkbutton(tab3, text="Save Password", variable=config_save_password_checkbox_var, command=config_save_password_checkbox_callback)
+config_save_password_checkbox.place(x=30, y=175)
+config_save_password_checkbox_var.set(config_save_password)
+
 #endregion
 
 # Handling of tooltips
 tooltip_label = ttk.Label(root, background="yellow", relief="solid", padding=(5, 2), justify="left")
 tooltip_label.place_forget()
+
+tab_control.select(tab3)
 
 # Start the GUI event loop
 root.mainloop()
