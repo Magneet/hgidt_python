@@ -20,6 +20,7 @@ logger = logging.getLogger(application_name)
 logger.addHandler(log_handler)
 logger.setLevel(logging.INFO)
 
+
 # Custom exception handler
 def exception_handler(exc_type, exc_value, exc_traceback):
     logger.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
@@ -41,7 +42,6 @@ if 'UserInfo' in config:
     config_username = config.get('UserInfo', 'Username')
     config_domain = config.get('UserInfo', 'Domain')
     config_server_name = config.get('UserInfo', 'ServerName')
-    config_ignore_ssl_errors = config.getboolean('UserInfo', 'Ignore_SSL_Errors')
     config_save_password = config.getboolean('UserInfo', 'Save_Password')
     try:
         config_password = keyring.get_password(application_name, config_username)
@@ -52,7 +52,6 @@ else:
     config_username = None
     config_domain = None
     config_server_name = None
-    config_ignore_ssl_errors = False
     config_save_password = False
 if 'Pods' in config:
     config_pods_data = config.get('Pods', 'Pods')
@@ -173,9 +172,6 @@ def config_reset_stored_password():
     except keyring.errors.PasswordDeleteError:
         logger.error("Credential not found or could not be deleted")
 
-def config_ignore_cert_errors_checkbox_callback():
-    print("bla")
-
 def config_save_password_checkbox_callback():
     global config_save_password, config_server_name
     if config_save_password_checkbox_var.get() == False:
@@ -213,7 +209,7 @@ def config_save_button_callback():
     else:
         config = configparser.ConfigParser()
         try:
-            config['UserInfo'] = {'Username': config_username, 'Domain': config_domain, 'ServerName': config_server_name, 'Ignore_SSL_Errors': str(config_ignore_cert_errors_checkbox_var.get()), 'Save_Password': str(config_save_password_checkbox_var.get())}
+            config['UserInfo'] = {'Username': config_username, 'Domain': config_domain, 'ServerName': config_server_name, 'Save_Password': str(config_save_password_checkbox_var.get())}
             config['Pods'] = {'Pods' : config_pods}
             config['Connection_Servers'] = {'Connection_Servers' : config_connection_servers}
             with open(CONFIG_FILE, 'w') as configfile:
@@ -235,7 +231,6 @@ def config_reset_button_callback():
     config_reset_stored_password()
     del config_password
     config_password = None
-    config_ignore_cert_errors_checkbox_var.set(False)
     config_save_password_checkbox_var.set(False)
     config_username_textbox.delete(0, tk.END)
     config_username_textbox.insert(tk.END, config_username_textbox_default_text)
@@ -613,11 +608,6 @@ config_conserver_combobox.bind("<FocusIn>", lambda event, var=config_conserver_c
 config_conserver_combobox.bind("<FocusOut>" , lambda event, var=config_conserver_combobox_default_text: textbox_handle_focus_out(event, var))
 
 # Create CheckBox
-config_ignore_cert_errors_checkbox_var = tk.BooleanVar()
-config_ignore_cert_errors_checkbox = ttk.Checkbutton(tab3, text="Ignore Certificate Errors", variable=config_ignore_cert_errors_checkbox_var, command=config_ignore_cert_errors_checkbox_callback)
-config_ignore_cert_errors_checkbox.place(x=30, y=350)
-config_ignore_cert_errors_checkbox_var.set(config_ignore_ssl_errors)
-
 config_save_password_checkbox_var = tk.BooleanVar()
 config_save_password_checkbox = ttk.Checkbutton(tab3, text="Save Password", variable=config_save_password_checkbox_var, command=config_save_password_checkbox_callback)
 config_save_password_checkbox.place(x=30, y=175)
