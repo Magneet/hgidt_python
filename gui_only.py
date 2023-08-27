@@ -69,7 +69,7 @@ else:
 
 #endregion
 
-#region Configuration related defs
+#region Configuration related functions
 
 def build_pod_info(hvconnectionobj):
     federation = horizon_functions.Federation(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
@@ -162,7 +162,101 @@ def show_password_dialog():
 
 #endregion
 
-#region defs for button handling of configuration tab
+#region functions for button handling of VDI tab
+def VDI_Connect_Button_callback():
+    global hvconnectionobj, global_desktop_pools, global_base_vms, global_base_snapshots, global_datacenters, global_vcenters,VDI_DesktopPool_Combobox_values
+    VDI_DesktopPool_Combobox.config(state='disabled')
+    VDI_Golden_Image_Combobox.config(state='disabled')
+    VDI_Snapshot_Combobox.config(state='disabled')
+    try:
+        global_desktop_pools.clear()
+        global_base_vms.clear()
+        global_base_snapshots.clear()
+        global_datacenters.clear()
+        global_vcenters.clear()
+        VDI_DesktopPool_Combobox_values.clear()
+    except:
+        global_desktop_pools=[]
+        global_base_vms=[]
+        global_base_snapshots=[]
+        global_datacenters=[]
+        global_vcenters=[]
+        VDI_DesktopPool_Combobox_values = []
+    for pod in config_pods:
+        hvconnectionobj = connect_pod(pod)
+        if hvconnectionobj != False:
+            horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+            horizon_config = horizon_functions.Config(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+            horizon_External = horizon_functions.External(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+            filter = {}
+            filter["type"] = "And"
+            filter["filters"] = []
+            filter1={}
+            filter1["type"] = "Equals"
+            filter1["name"] = "source"
+            filter1["value"] = "INSTANT_CLONE"
+            filter2={}
+            filter2["type"] = "Equals"
+            filter2["name"] = "type"
+            filter2["value"] = "AUTOMATED"
+            filter["filters"].append(filter1)
+            filter["filters"].append(filter2)
+            desktop_pools=horizon_inventory.get_desktop_pools(filter=filter)
+            for pool in desktop_pools:
+                pool['pod'] = pod
+            global_desktop_pools+=desktop_pools
+            vcenters = horizon_config.get_virtual_centers()
+            for vcenter in vcenters:
+                vcenter['pod'] = pod
+                datacenters = horizon_External.get_datacenters(vcenter_id=vcenter['id'])
+                for datacenter in datacenters:
+                    datacenter['pod'] = pod
+                    basevms = horizon_External.get_base_vms(vcenter_id=vcenter['id'], datacenter_id=datacenter['id'],filter_incompatible_vms=True)
+                    for basevm in basevms:
+                        basevm['pod'] = pod
+                        basesnapshots = horizon_External.get_base_snapshots(vcenter_id=vcenter['id'],base_vm_id=basevm['id'])
+                        if len(basesnapshots) < 1:
+                            basevms.remove(basevm)
+                        else:
+                            for basesnapshot in basesnapshots:
+                                basesnapshot['basevmid'] = basevm['id']
+                            global_base_snapshots+=basesnapshots
+                    global_base_vms=basevms
+                global_datacenters+=datacenter
+            global_vcenters+=vcenters
+            hvconnectionobj.hv_disconnect()
+    try:
+        name_dict_mapping.clear()
+    except:
+        name_dict_mapping = []
+    
+    for pool in global_desktop_pools:
+        name = pool['name']
+        if name in name_dict_mapping:
+            print("found name")
+            pod_tmp=pool['pod']
+            new_name = f'{name} ({pod_tmp}])'
+            pool['name'] = new_name
+        else:
+            name_dict_mapping.append(name)
+        # print(name_dict_mapping)
+        # print(pool['name'])
+    VDI_DesktopPool_Combobox_values = {item["name"]: item for item in global_desktop_pools}
+    VDI_DesktopPool_Combobox__selected_default = global_desktop_pools[0]['name']
+    VDI_DesktopPool_Combobox['values'] = list(VDI_DesktopPool_Combobox_values.keys())
+    VDI_DesktopPool_Combobox.config(state='readonly')
+    VDI_DesktopPool_Combobox.set(VDI_DesktopPool_Combobox__selected_default)
+    VDI_DesktopPool_Combobox.event_generate("<<ComboboxSelected>>") 
+    VDI_Connect_Button.config(text="Refresh")
+    VDI_Statusbox_Label.config(text="Connected")
+
+def VDI_DesktopPool_Combobox_callback(event):
+    # print(VDI_DesktopPool_Combobox.get())
+    selected_dict = VDI_DesktopPool_Combobox_values[VDI_DesktopPool_Combobox.get()]
+    print(selected_dict['id'])
+#endregion
+
+#region functions for button handling of configuration tab
 
 def config_reset_stored_password():
     global config_password
@@ -292,7 +386,25 @@ def config_test_button_callback():
 
 #endregion
 
-#region Various definitions
+#region Various functions
+
+def connect_pod(pod:str):
+    global config_server_name
+    con_servers_to_use = [item for item in config_connection_servers if item["PodName"] == pod]
+    for con_server in con_servers_to_use:
+        serverdns = con_server['ServerDNS']
+        logger.info("connecting to: "+serverdns)
+        config_url = "https://" + serverdns
+        hvconnectionobj = horizon_functions.Connection(username = config_username,domain = config_domain,password = config_password,url = config_url)
+        try:
+            hvconnectionobj.hv_connect()
+            logger.info("Connected to: "+serverdns)
+            config_server_name = serverdns
+            return hvconnectionobj
+        except Exception as e:
+            logger.error("Failed to connect to: "+serverdns)
+            logger.error(str(e))
+    return False
 
 def refresh_window():
     # Redraw the window
@@ -313,6 +425,7 @@ def textbox_handle_focus_out(event,default_text):
         event.widget.config(foreground='grey')  # Change text color to grey when not editing
 #endregion
 
+# region Generic tkinter config
 root = tk.Tk()
 root.title("Horizon Golden Image Deployment Tool")
 root.geometry("800x660")
@@ -334,16 +447,19 @@ canvas.pack(fill="both", expand=True)
 tab_control = ttk.Notebook(canvas)
 tab_control.pack(fill="both", expand=True)
 
+#endregion
 
-# Tab 1 - Desktop Pools
+
+# region Tab 1 - VDI Desktop Pools
 tab1 = ttk.Frame(tab_control)
 tab_control.add(tab1, text="VDI Pools")
 # tab1.configure(style='Custom.TFrame')
 
 # Place your Tab 1 widgets here
 # Create Buttons
-VDI_Connect_Button = ttk.Button(tab1, text="Connect")
+VDI_Connect_Button = ttk.Button(tab1, text="Connect", command=VDI_Connect_Button_callback)
 VDI_Connect_Button.place(x=570, y=30, width=160, height=25)
+
 
 VDI_Apply_Golden_Image_button = ttk.Button(tab1, text="Deploy Golden Image")
 VDI_Apply_Golden_Image_button.place(x=570, y=510, width=160, height=25)
@@ -363,60 +479,62 @@ VDI_Statusbox_Label.place(x=430, y=537)
 
 
 # Create ComboBoxes
-VDI_DesktopPool_Combobox = ttk.Combobox(tab1)
+VDI_DesktopPool_Combobox_var = tk.StringVar()
+VDI_DesktopPool_Combobox = ttk.Combobox(tab1, state="disabled")
 VDI_DesktopPool_Combobox.place(x=30, y=30, width=150, height=25)
-ToolTip(VDI_DesktopPool_Combobox, msg="Select the desktop pool to update")
+VDI_DesktopPool_Combobox.bind("<<ComboboxSelected>>",VDI_DesktopPool_Combobox_callback)
+ToolTip(VDI_DesktopPool_Combobox, msg="Select the desktop pool to update", delay=0.1)
 
-VDI_Golden_Image_Combobox = ttk.Combobox(tab1)
+VDI_Golden_Image_Combobox = ttk.Combobox(tab1, state="disabled")
 VDI_Golden_Image_Combobox.place(x=210, y=30, width=150, height=25)
-ToolTip(VDI_Golden_Image_Combobox, msg="Select the new source VM")
+ToolTip(VDI_Golden_Image_Combobox, msg="Select the new source VM", delay=0.1)
 
-VDI_Snapshot_Combobox = ttk.Combobox(tab1)
+VDI_Snapshot_Combobox = ttk.Combobox(tab1, state="disabled")
 VDI_Snapshot_Combobox.place(x=390, y=30, width=150, height=25)
-ToolTip(VDI_Snapshot_Combobox, msg="Select the new source Snapshot")
+ToolTip(VDI_Snapshot_Combobox, msg="Select the new source Snapshot", delay=0.1)
 
-VDI_LofOffPolicy_Combobox = ttk.Combobox(tab1)
+VDI_LofOffPolicy_Combobox = ttk.Combobox(tab1, state="disabled")
 VDI_LofOffPolicy_Combobox.place(x=570, y=110, width=160, height=25)
-ToolTip(VDI_LofOffPolicy_Combobox, msg="Select the logoff Policy")
+ToolTip(VDI_LofOffPolicy_Combobox, msg="Select the logoff Policy", delay=0.1)
 
-VDI_Memory_ComboBox = ttk.Combobox(tab1)
+VDI_Memory_ComboBox = ttk.Combobox(tab1, state="disabled")
 VDI_Memory_ComboBox.place(x=570, y=160, width=160, height=25)
-ToolTip(VDI_Memory_ComboBox, msg="Select the new memory size")
+ToolTip(VDI_Memory_ComboBox, msg="Select the new memory size", delay=0.1)
 
-VDI_CPUCount_ComboBox = ttk.Combobox(tab1)
+VDI_CPUCount_ComboBox = ttk.Combobox(tab1, state="disabled")
 VDI_CPUCount_ComboBox.place(x=570, y=190, width=160, height=25)
-ToolTip(VDI_CPUCount_ComboBox, msg="Select the new CPU count")
+ToolTip(VDI_CPUCount_ComboBox, msg="Select the new CPU count", delay=0.1)
 
-VDI_CoresPerSocket_ComboBox = ttk.Combobox(tab1)
+VDI_CoresPerSocket_ComboBox = ttk.Combobox(tab1, state="disabled")
 VDI_CoresPerSocket_ComboBox.place(x=570, y=220, width=160, height=25)
-ToolTip(VDI_CoresPerSocket_ComboBox, msg="Select the number of cores per socket")
+ToolTip(VDI_CoresPerSocket_ComboBox, msg="Select the number of cores per socket", delay=0.1)
 
 # Create Checkboxes
 VDI_secondaryimage_checkbox_var = tk.BooleanVar()
 VDI_secondaryimage_checkbox = ttk.Checkbutton(tab1, text="Push as Secondary Image", variable=VDI_secondaryimage_checkbox_var)
 VDI_secondaryimage_checkbox.place(x=570, y=342)
-ToolTip(VDI_secondaryimage_checkbox, msg="Check to deploy the new golden image as a secondary image")
+ToolTip(VDI_secondaryimage_checkbox, msg="Check to deploy the new golden image as a secondary image", delay=0.1)
 
 VDI_StopOnError_checkbox_var = tk.BooleanVar()
 VDI_StopOnError_checkbox = ttk.Checkbutton(tab1, text="Stop on error", variable=VDI_StopOnError_checkbox_var)
 VDI_StopOnError_checkbox.place(x=570, y=90)
-ToolTip(VDI_StopOnError_checkbox, msg="CHeck to make sure deployment of new desktops stops on an error")
+ToolTip(VDI_StopOnError_checkbox, msg="CHeck to make sure deployment of new desktops stops on an error", delay=0.1)
 VDI_StopOnError_checkbox_var.set(True)
 
 VDI_Resize_checkbox_var = tk.BooleanVar()
 VDI_Resize_checkbox = ttk.Checkbutton(tab1, text="Enable Resize Options", variable=VDI_Resize_checkbox_var)
 VDI_Resize_checkbox.place(x=570, y=137)
-ToolTip(VDI_Resize_checkbox, msg="Check to enable resizing of the Golden Image in the Desktop Pool")
+ToolTip(VDI_Resize_checkbox, msg="Check to enable resizing of the Golden Image in the Desktop Pool", delay=0.1)
 
 VDI_vtpm_checkbox_var = tk.BooleanVar()
 VDI_vtpm_checkbox = ttk.Checkbutton(tab1, text="Add vTPM", variable=VDI_vtpm_checkbox_var)
 VDI_vtpm_checkbox.place(x=570, y=70)
-ToolTip(VDI_vtpm_checkbox, msg="Check to add a vTPM")
+ToolTip(VDI_vtpm_checkbox, msg="Check to add a vTPM", delay=0.1)
 
 VDI_Enable_datetimepicker_checkbox_var = tk.BooleanVar()
 VDI_Enable_datetimepicker_checkbox = ttk.Checkbutton(tab1, text="Schedule deployment", variable=VDI_Enable_datetimepicker_checkbox_var)
 VDI_Enable_datetimepicker_checkbox.place(x=570, y=250)
-ToolTip(VDI_Enable_datetimepicker_checkbox, msg="Check to enable a scheduled deployment of the new image")
+ToolTip(VDI_Enable_datetimepicker_checkbox, msg="Check to enable a scheduled deployment of the new image", delay=0.1)
 
 # Create other Widgets
 VDI_Status_Textblock = tk.Text(tab1, borderwidth=1, relief="solid", wrap="word")
@@ -432,6 +550,8 @@ VDI_cal.place(x=570,y=280)
 VDI_TimePicker = SpinTimePickerModern(tab1)
 VDI_TimePicker.addAll(constants.HOURS24)  # adds hours clock, minutes and period
 VDI_TimePicker.place(x=570,y=310)
+
+#endregion
 
 
 #region Tab 2 - RDS Farms
@@ -464,31 +584,31 @@ RDS_Statusbox_Label.place(x=430, y=537)
 # RDS_timepicker_label.place(x=615, y=310)
 
 # Create ComboBoxes
-RDS_DesktopPool_Combobox = ttk.Combobox(tab2)
+RDS_DesktopPool_Combobox = ttk.Combobox(tab2, state="disabled")
 RDS_DesktopPool_Combobox.place(x=30, y=30, width=150, height=25)
 ToolTip(RDS_DesktopPool_Combobox, msg="Select the desktop pool to update")
 
-RDS_Golden_Image_Combobox = ttk.Combobox(tab2)
+RDS_Golden_Image_Combobox = ttk.Combobox(tab2, state="disabled")
 RDS_Golden_Image_Combobox.place(x=210, y=30, width=150, height=25)
 ToolTip(RDS_Golden_Image_Combobox, msg="Select the new source VM")
 
-RDS_Snapshot_Combobox = ttk.Combobox(tab2)
+RDS_Snapshot_Combobox = ttk.Combobox(tab2, state="disabled")
 RDS_Snapshot_Combobox.place(x=390, y=30, width=150, height=25)
 ToolTip(RDS_Snapshot_Combobox, msg="Select the new source Snapshot")
 
-RDS_LofOffPolicy_Combobox = ttk.Combobox(tab2)
+RDS_LofOffPolicy_Combobox = ttk.Combobox(tab2, state="disabled")
 RDS_LofOffPolicy_Combobox.place(x=570, y=110, width=160, height=25)
 ToolTip(RDS_LofOffPolicy_Combobox, msg="Select the logoff Policy")
 
-RDS_Memory_ComboBox = ttk.Combobox(tab2)
+RDS_Memory_ComboBox = ttk.Combobox(tab2 , state="disabled")
 RDS_Memory_ComboBox.place(x=570, y=160, width=160, height=25)
 ToolTip(RDS_Memory_ComboBox, msg="Select the new memory size")
 
-RDS_CPUCount_ComboBox = ttk.Combobox(tab2)
+RDS_CPUCount_ComboBox = ttk.Combobox(tab2, state="disabled")
 RDS_CPUCount_ComboBox.place(x=570, y=190, width=160, height=25)
 ToolTip(RDS_CPUCount_ComboBox, msg="Select the new CPU count")
 
-RDS_CoresPerSocket_ComboBox = ttk.Combobox(tab2)
+RDS_CoresPerSocket_ComboBox = ttk.Combobox(tab2, state="disabled")
 RDS_CoresPerSocket_ComboBox.place(x=570, y=220, width=160, height=25)
 ToolTip(RDS_CoresPerSocket_ComboBox, msg="Select the number of cores per socket")
 
@@ -616,10 +736,10 @@ config_save_password_checkbox_var.set(config_save_password)
 #endregion
 
 # Handling of tooltips
-tooltip_label = ttk.Label(root, background="yellow", relief="solid", padding=(5, 2), justify="left")
-tooltip_label.place_forget()
+# tooltip_label = ttk.Label(root, background="yellow", relief="solid", padding=(5, 2), justify="left")
+# tooltip_label.place_forget()
 
-tab_control.select(tab3)
+tab_control.select(tab1)
 
 # Start the GUI event loop
 root.mainloop()
