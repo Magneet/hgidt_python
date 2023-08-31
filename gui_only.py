@@ -163,97 +163,52 @@ def show_password_dialog():
 #endregion
 
 #region functions for button handling of VDI tab
-def VDI_Connect_Button_callback():
-    global hvconnectionobj, global_desktop_pools, global_base_vms, global_base_snapshots, global_datacenters, global_vcenters,VDI_DesktopPool_Combobox_values
-    VDI_DesktopPool_Combobox.config(state='disabled')
-    VDI_Golden_Image_Combobox.config(state='disabled')
-    VDI_Snapshot_Combobox.config(state='disabled')
-    try:
-        global_desktop_pools.clear()
-        global_base_vms.clear()
-        global_base_snapshots.clear()
-        global_datacenters.clear()
-        global_vcenters.clear()
-        VDI_DesktopPool_Combobox_values.clear()
-    except:
-        global_desktop_pools=[]
-        global_base_vms=[]
-        global_base_snapshots=[]
-        global_datacenters=[]
-        global_vcenters=[]
-        VDI_DesktopPool_Combobox_values = []
-    for pod in config_pods:
-        hvconnectionobj = connect_pod(pod)
-        if hvconnectionobj != False:
-            horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-            horizon_config = horizon_functions.Config(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-            horizon_External = horizon_functions.External(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-            filter = {}
-            filter["type"] = "And"
-            filter["filters"] = []
-            filter1={}
-            filter1["type"] = "Equals"
-            filter1["name"] = "source"
-            filter1["value"] = "INSTANT_CLONE"
-            filter2={}
-            filter2["type"] = "Equals"
-            filter2["name"] = "type"
-            filter2["value"] = "AUTOMATED"
-            filter["filters"].append(filter1)
-            filter["filters"].append(filter2)
-            desktop_pools=horizon_inventory.get_desktop_pools(filter=filter)
-            for pool in desktop_pools:
-                pool['pod'] = pod
-            global_desktop_pools+=desktop_pools
-            vcenters = horizon_config.get_virtual_centers()
-            for vcenter in vcenters:
-                vcenter['pod'] = pod
-                datacenters = horizon_External.get_datacenters(vcenter_id=vcenter['id'])
-                for datacenter in datacenters:
-                    datacenter['pod'] = pod
-                    basevms = horizon_External.get_base_vms(vcenter_id=vcenter['id'], datacenter_id=datacenter['id'],filter_incompatible_vms=True)
-                    for basevm in basevms:
-                        basevm['pod'] = pod
-                        basesnapshots = horizon_External.get_base_snapshots(vcenter_id=vcenter['id'],base_vm_id=basevm['id'])
-                        if len(basesnapshots) < 1:
-                            basevms.remove(basevm)
-                        else:
-                            for basesnapshot in basesnapshots:
-                                basesnapshot['basevmid'] = basevm['id']
-                            global_base_snapshots+=basesnapshots
-                    global_base_vms=basevms
-                global_datacenters+=datacenter
-            global_vcenters+=vcenters
-            hvconnectionobj.hv_disconnect()
-    try:
-        name_dict_mapping.clear()
-    except:
-        name_dict_mapping = []
-    
-    for pool in global_desktop_pools:
-        name = pool['name']
-        if name in name_dict_mapping:
-            print("found name")
-            pod_tmp=pool['pod']
-            new_name = f'{name} ({pod_tmp}])'
-            pool['name'] = new_name
-        else:
-            name_dict_mapping.append(name)
-        # print(name_dict_mapping)
-        # print(pool['name'])
-    VDI_DesktopPool_Combobox_values = {item["name"]: item for item in global_desktop_pools}
-    VDI_DesktopPool_Combobox__selected_default = global_desktop_pools[0]['name']
-    VDI_DesktopPool_Combobox['values'] = list(VDI_DesktopPool_Combobox_values.keys())
-    VDI_DesktopPool_Combobox.config(state='readonly')
-    VDI_DesktopPool_Combobox.set(VDI_DesktopPool_Combobox__selected_default)
-    VDI_DesktopPool_Combobox.event_generate("<<ComboboxSelected>>") 
-    VDI_Connect_Button.config(text="Refresh")
-    VDI_Statusbox_Label.config(text="Connected")
 
 def VDI_DesktopPool_Combobox_callback(event):
     # print(VDI_DesktopPool_Combobox.get())
-    selected_dict = VDI_DesktopPool_Combobox_values[VDI_DesktopPool_Combobox.get()]
-    print(selected_dict['id'])
+    global global_desktop_pools, global_base_vms, VDI_Golden_Image_Combobox__selected_default,VDI_Golden_Image_Combobox_values
+    
+    try:
+        VDI_Golden_Image_Combobox_values.clear()
+    except:
+        VDI_Golden_Image_Combobox_values = []
+    
+    selected_pool = VDI_DesktopPool_Combobox_values[VDI_DesktopPool_Combobox.get()]
+    podname = selected_pool['pod']
+    vcenter_id = selected_pool['vcenter_id']
+
+    optional_golden_images = [item for item in global_base_vms if item["vcenter_id"] == vcenter_id and "UNSUPPORTED_OS" not in item["incompatible_reasons"] ]
+    VDI_Golden_Image_Combobox_values = {item["name"]: item for item in optional_golden_images}
+    VDI_Golden_Image_Combobox__selected_default = optional_golden_images[0]['name']
+    VDI_Golden_Image_Combobox['values'] = list(VDI_Golden_Image_Combobox_values.keys())
+    VDI_Golden_Image_Combobox.config(state='readonly')
+    VDI_Golden_Image_Combobox.set(VDI_Golden_Image_Combobox__selected_default)
+    VDI_Golden_Image_Combobox.event_generate("<<ComboboxSelected>>") 
+    
+def VDI_Golden_Image_Combobox_callback(event):
+    
+    global global_desktop_pools, global_base_vms, VDI_Snapshot_Combobox__selected_default, global_base_snapshots,VDI_Snapshot_Combobox_values
+
+    try:
+        VDI_Snapshot_Combobox_values.clear()
+    except:
+        VDI_Snapshot_Combobox_values = []
+    
+    selected_vm = VDI_Golden_Image_Combobox_values[VDI_Golden_Image_Combobox.get()]
+
+    podname = selected_vm['pod']
+    vcenter_id = selected_vm['vcenter_id']
+    basevm_id = selected_vm['id']
+    optional_snapshots = [item for item in global_base_snapshots if item["vcenter_id"] == vcenter_id and item["basevmid"] == basevm_id]
+    for i in optional_snapshots:
+        print(i)
+    VDI_Snapshot_Combobox_values = {item["name"]: item for item in optional_snapshots}
+    VDI_Snapshot_Combobox__selected_default = optional_snapshots[0]['name']
+    VDI_Snapshot_Combobox['values'] = list(VDI_Snapshot_Combobox_values.keys())
+    VDI_Snapshot_Combobox.config(state='readonly')
+    VDI_Snapshot_Combobox.set(VDI_Snapshot_Combobox__selected_default)
+    VDI_Snapshot_Combobox.event_generate("<<ComboboxSelected>>") 
+    
 #endregion
 
 #region functions for button handling of configuration tab
@@ -387,6 +342,130 @@ def config_test_button_callback():
 #endregion
 
 #region Various functions
+def generic_Connect_Button_callback():
+    global hvconnectionobj, global_desktop_pools, global_rds_farms, global_base_vms, global_base_snapshots, global_datacenters, global_vcenters,VDI_DesktopPool_Combobox_values,RDS_Farm_Combobox_values
+    VDI_DesktopPool_Combobox.config(state='disabled')
+    VDI_Golden_Image_Combobox.config(state='disabled')
+    VDI_Snapshot_Combobox.config(state='disabled')
+    VDI_Statusbox_Label.config(text="Connecting")
+    RDS_Statusbox_Label.config(text="Connecting")
+    refresh_window()
+    try:
+        global_rds_farms.clear()
+        global_desktop_pools.clear()
+        global_base_vms.clear()
+        global_base_snapshots.clear()
+        global_datacenters.clear()
+        global_vcenters.clear()
+        VDI_DesktopPool_Combobox_values.clear()
+        RDS_Farm_Combobox_values.clear()
+    except:
+        global_rds_farms=[]
+        global_desktop_pools=[]
+        global_base_vms=[]
+        global_base_snapshots=[]
+        global_datacenters=[]
+        global_vcenters=[]
+        VDI_DesktopPool_Combobox_values = []
+        RDS_Farm_Combobox_values = []
+    for pod in config_pods:
+        hvconnectionobj = connect_pod(pod)
+        if hvconnectionobj != False:
+            horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+            horizon_config = horizon_functions.Config(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+            horizon_External = horizon_functions.External(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+            vdi_filter = {}
+            vdi_filter["type"] = "And"
+            vdi_filter["filters"] = []
+            vdi_filter1={}
+            vdi_filter1["type"] = "Equals"
+            vdi_filter1["name"] = "source"
+            vdi_filter1["value"] = "INSTANT_CLONE"
+            vdi_filter2={}
+            vdi_filter2["type"] = "Equals"
+            vdi_filter2["name"] = "type"
+            vdi_filter2["value"] = "AUTOMATED"
+            vdi_filter["filters"].append(vdi_filter1)
+            vdi_filter["filters"].append(vdi_filter2)
+            rds_filter = {}
+            rds_filter["type"] = "Equals"
+            rds_filter["name"] = "automated_farm_settings.image_source"
+            rds_filter["value"] = "VIRTUAL_CENTER"
+            desktop_pools=horizon_inventory.get_desktop_pools(filter=vdi_filter)
+            for pool in desktop_pools:
+                pool['pod'] = pod
+            global_desktop_pools+=desktop_pools
+
+            rds_farms=horizon_inventory.get_farms(filter=rds_filter)
+            for farm in rds_farms:
+                farm['pod'] = pod
+            global_rds_farms+=rds_farms
+
+            vcenters = horizon_config.get_virtual_centers()
+            for vcenter in vcenters:
+                vcenter['pod'] = pod
+                datacenters = horizon_External.get_datacenters(vcenter_id=vcenter['id'])
+                for datacenter in datacenters:
+                    datacenter['pod'] = pod
+                    basevms = horizon_External.get_base_vms(vcenter_id=vcenter['id'], datacenter_id=datacenter['id'],filter_incompatible_vms=True)
+                    for basevm in basevms:
+                        basevm['pod'] = pod
+                        basesnapshots = horizon_External.get_base_snapshots(vcenter_id=vcenter['id'],base_vm_id=basevm['id'])
+                        if len(basesnapshots) < 1:
+                            basevms.remove(basevm)
+                        else:
+                            for basesnapshot in basesnapshots:
+                                basesnapshot['basevmid'] = basevm['id']
+                            global_base_snapshots+=basesnapshots
+                    global_base_vms+=basevms
+                global_datacenters+=datacenter
+            global_vcenters+=vcenters
+            hvconnectionobj.hv_disconnect()
+    try:
+        vdi_name_dict_mapping.clear()
+        rds_name_dict_mapping.clear()
+    except:
+        vdi_name_dict_mapping = []
+        rds_name_dict_mapping = []
+
+    for pool in global_desktop_pools:
+        name = pool['name']
+        if name in vdi_name_dict_mapping:
+            pod_tmp=pool['pod']
+            new_name = f'{name} ({pod_tmp}])'
+            pool['name'] = new_name
+        else:
+            vdi_name_dict_mapping.append(name)
+
+    for farm in global_rds_farms:
+        name = farm['name']
+        if name in rds_name_dict_mapping:
+            pod_tmp=farm['pod']
+            new_name = f'{name} ({pod_tmp}])'
+            farm['name'] = new_name
+        else:
+            rds_name_dict_mapping.append(name)
+        # print(name_dict_mapping)
+        # print(pool['name'])
+    VDI_DesktopPool_Combobox_values = {item["name"]: item for item in global_desktop_pools}
+    VDI_DesktopPool_Combobox__selected_default = global_desktop_pools[0]['name']
+    VDI_DesktopPool_Combobox['values'] = list(VDI_DesktopPool_Combobox_values.keys())
+    VDI_DesktopPool_Combobox.config(state='readonly')
+    VDI_DesktopPool_Combobox.set(VDI_DesktopPool_Combobox__selected_default)
+    VDI_DesktopPool_Combobox.event_generate("<<ComboboxSelected>>") 
+    
+    RDS_Farm_Combobox_values = {item["name"]: item for item in global_rds_farms}
+    RDS_Farm_Combobox__selected_default = global_rds_farms[0]['name']
+    RDS_Farm_Combobox['values'] = list(RDS_Farm_Combobox_values.keys())
+    RDS_Farm_Combobox.config(state='readonly')
+    RDS_Farm_Combobox.set(RDS_Farm_Combobox__selected_default)
+    RDS_Farm_Combobox.event_generate("<<ComboboxSelected>>") 
+    
+    VDI_Connect_Button.config(text="Refresh")
+    RDS_Connect_Button.config(text="Refresh")
+    VDI_Statusbox_Label.config(text="Connected")
+    RDS_Statusbox_Label.config(text="Connected")
+
 
 def connect_pod(pod:str):
     global config_server_name
@@ -428,7 +507,7 @@ def textbox_handle_focus_out(event,default_text):
 # region Generic tkinter config
 root = tk.Tk()
 root.title("Horizon Golden Image Deployment Tool")
-root.geometry("800x660")
+root.geometry("1024x660")
 
 style = ttk.Style()
 # style.configure("Centered.TButton", padding=(10, 5))
@@ -457,8 +536,8 @@ tab_control.add(tab1, text="VDI Pools")
 
 # Place your Tab 1 widgets here
 # Create Buttons
-VDI_Connect_Button = ttk.Button(tab1, text="Connect", command=VDI_Connect_Button_callback)
-VDI_Connect_Button.place(x=570, y=30, width=160, height=25)
+VDI_Connect_Button = ttk.Button(tab1, text="Connect", command=generic_Connect_Button_callback)
+VDI_Connect_Button.place(x=750, y=30, width=160, height=25)
 
 
 VDI_Apply_Golden_Image_button = ttk.Button(tab1, text="Deploy Golden Image")
@@ -481,16 +560,17 @@ VDI_Statusbox_Label.place(x=430, y=537)
 # Create ComboBoxes
 VDI_DesktopPool_Combobox_var = tk.StringVar()
 VDI_DesktopPool_Combobox = ttk.Combobox(tab1, state="disabled")
-VDI_DesktopPool_Combobox.place(x=30, y=30, width=150, height=25)
+VDI_DesktopPool_Combobox.place(x=30, y=30, width=220, height=25)
 VDI_DesktopPool_Combobox.bind("<<ComboboxSelected>>",VDI_DesktopPool_Combobox_callback)
 ToolTip(VDI_DesktopPool_Combobox, msg="Select the desktop pool to update", delay=0.1)
 
 VDI_Golden_Image_Combobox = ttk.Combobox(tab1, state="disabled")
-VDI_Golden_Image_Combobox.place(x=210, y=30, width=150, height=25)
+VDI_Golden_Image_Combobox.place(x=270, y=30, width=220, height=25)
+VDI_Golden_Image_Combobox.bind("<<ComboboxSelected>>",VDI_Golden_Image_Combobox_callback)
 ToolTip(VDI_Golden_Image_Combobox, msg="Select the new source VM", delay=0.1)
 
 VDI_Snapshot_Combobox = ttk.Combobox(tab1, state="disabled")
-VDI_Snapshot_Combobox.place(x=390, y=30, width=150, height=25)
+VDI_Snapshot_Combobox.place(x=510, y=30, width=220, height=25)
 ToolTip(VDI_Snapshot_Combobox, msg="Select the new source Snapshot", delay=0.1)
 
 VDI_LofOffPolicy_Combobox = ttk.Combobox(tab1, state="disabled")
@@ -561,7 +641,7 @@ tab_control.add(tab2, text="RDS Farms")
 
 # Place your Tab 2 widgets here
 # create buttons
-RDS_Connect_Button = ttk.Button(tab2, text="Connect")
+RDS_Connect_Button = ttk.Button(tab2, text="Connect", command=generic_Connect_Button_callback)
 RDS_Connect_Button.place(x=570, y=30, width=160, height=25)
 
 RDS_Apply_Golden_Image_button = ttk.Button(tab2, text="Deploy Golden Image")
@@ -584,9 +664,9 @@ RDS_Statusbox_Label.place(x=430, y=537)
 # RDS_timepicker_label.place(x=615, y=310)
 
 # Create ComboBoxes
-RDS_DesktopPool_Combobox = ttk.Combobox(tab2, state="disabled")
-RDS_DesktopPool_Combobox.place(x=30, y=30, width=150, height=25)
-ToolTip(RDS_DesktopPool_Combobox, msg="Select the desktop pool to update")
+RDS_Farm_Combobox = ttk.Combobox(tab2, state="disabled")
+RDS_Farm_Combobox.place(x=30, y=30, width=150, height=25)
+ToolTip(RDS_Farm_Combobox, msg="Select the desktop pool to update")
 
 RDS_Golden_Image_Combobox = ttk.Combobox(tab2, state="disabled")
 RDS_Golden_Image_Combobox.place(x=210, y=30, width=150, height=25)

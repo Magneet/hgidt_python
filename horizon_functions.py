@@ -342,6 +342,64 @@ class Inventory:
                 raise "Error: " + str(e)
             else:
                 return response.json()
+            
+    def get_farms(self, maxpagesize:int=100, filter:dict="") -> list:
+        """Lists the Farms in the environment.
+
+        For information on filtering see https://vdc-download.vmware.com/vmwb-repository/dcr-public/f92cce4b-9762-4ed0-acbd-f1d0591bd739/235dc19c-dabd-43f2-8d38-8a7a333e914e/HorizonServerRESTPaginationAndFilterGuide.doc
+        Available for Horizon 8 2111 and later."""
+
+        def int_get_farms_v3(self, page:int, maxpagesize: int, filter:list="") ->list:
+            if filter != "":
+                filter_url = urllib.parse.quote(json.dumps(filter,separators=(', ', ':')))
+                add_filter = f"?filter={filter_url}"
+                response = requests.get(f'{self.url}/rest/inventory/v4/farms{add_filter}&page={page}&size={maxpagesize}', verify=False, headers=self.access_token)
+            else:
+                response = requests.get(f'{self.url}/rest/inventory/v4/farms?page={page}&size={maxpagesize}', verify=False, headers=self.access_token)
+            if response.status_code == 400:
+                if "error_messages" in response.json():
+                    error_message = (response.json())["error_messages"]
+                else:
+                    error_message = (response.json())["error_message"]
+                raise Exception(f"Error {response.status_code}: {error_message}")
+            elif response.status_code != 200:
+                raise Exception(f"Error {response.status_code}: {response.reason}")
+            else:
+                try:
+                    response.raise_for_status()
+                except requests.exceptions.RequestException as e:
+                    raise "Error: " + str(e)
+                else:
+                    return response
+        if maxpagesize > 1000:
+            maxpagesize = 1000
+        page = 1
+        response = int_get_farms_v3(self,page = page, maxpagesize= maxpagesize,filter = filter)
+        results = response.json()
+        while 'HAS_MORE_RECORDS' in response.headers:
+            page += 1
+            response = int_get_farms_v3(self,page = page, maxpagesize= maxpagesize, filter = filter)
+            results += response.json()
+        return results
+
+    def get_farm(self, farm_id:str) -> dict:
+        """Gets the Farm information.
+
+        Requires id of a RDS Farm
+        Available for Horizon 8 2103 and later."""
+        response = requests.get(f'{self.url}/rest/inventory/v4/farms/{farm_id}', verify=False,  headers=self.access_token)
+        if response.status_code == 400:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        elif response.status_code != 200:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        else:
+            try:
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise "Error: " + str(e)
+            else:
+                return response.json()            
 
 class External:
     def __init__(self, url: str, access_token: dict):
