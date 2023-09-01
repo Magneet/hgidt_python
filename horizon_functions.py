@@ -1,4 +1,4 @@
-import json, requests, urllib
+import json, requests, urllib, time
 from typing import get_args
 
 class Connection:
@@ -399,7 +399,79 @@ class Inventory:
             except requests.exceptions.RequestException as e:
                 raise "Error: " + str(e)
             else:
-                return response.json()            
+                return response.json()
+
+    def desktop_pool_push_image(self, desktop_pool_id:str, start_time:str=None,compute_profile_num_cores_per_socket:int=None,compute_profile_num_cpus:int=None,compute_profile_ram_mb:int=None,machine_ids:list=None, im_stream_id:str=None,im_tag_id:str=None,parent_vm_id:str=None,snapshot_id:str=None,logoff_policy:str="WAIT_FOR_LOGOFF", stop_on_first_error:bool=True,selective_push_image:bool=False, add_virtual_tpm:bool=False):
+        """Schedule/reschedule a request to update the image in an instant clone desktop pool
+        """
+        headers = self.access_token
+        headers["Content-Type"] = 'application/json'
+        data = {}
+        data["add_virtual_tpm"] = add_virtual_tpm
+        if compute_profile_num_cores_per_socket != None:
+            data["compute_profile_num_cores_per_socket"] = int(compute_profile_num_cores_per_socket)
+        if compute_profile_num_cpus != None:
+            data["compute_profile_num_cpus"] = int(compute_profile_num_cpus)
+        if compute_profile_ram_mb != None:
+            data["compute_profile_ram_mb"] = int(compute_profile_ram_mb)
+        if im_stream_id != None and im_tag_id !=None:
+            data["im_stream_id"] = im_stream_id
+            data["im_tag_id"] = im_tag_id
+        data["logoff_policy"] = logoff_policy
+        if machine_ids != None:
+            data["machine_ids"] = machine_ids
+        if parent_vm_id != None and snapshot_id !=None:
+            data["parent_vm_id"] = parent_vm_id
+        data["selective_push_image"] = selective_push_image
+        if parent_vm_id != None and snapshot_id !=None:
+            data["snapshot_id"] = snapshot_id
+        if start_time != None:
+            data["start_time"]= start_time
+        else:
+            data["start_time"]= time.time()
+        data["stop_on_first_error"] = stop_on_first_error
+        json_data = json.dumps(data)
+        response = requests.post(f'{self.url}/rest/inventory/v2/desktop-pools/{desktop_pool_id}/action/schedule-push-image', verify=False,  headers=headers, data = json_data)
+        if response.status_code == 400:
+            if "error_messages" in response.json():
+                error_message = (response.json())["error_messages"]
+            else:
+                error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        if response.status_code == 404:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        elif response.status_code == 403:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        elif response.status_code != 200:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        else:
+            try:
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise "Error: " + str(e)
+
+    def cancel_desktop_pool_push_image(self, desktop_pool_id:str):
+        """Cancels push of new golden image.
+
+        Available for Horizon 8 2012 and later."""
+        response = requests.get(f'{self.url}/rest/inventory/v1/desktop-pools/{desktop_pool_id}/action/cancel-scheduled-push-image', verify=False,  headers=self.access_token)
+        if response.status_code == 400:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        if response.status_code == 404:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        elif response.status_code == 403:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        elif response.status_code != 204:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        else:
+            try:
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise "Error: " + str(e)
+
 
 class External:
     def __init__(self, url: str, access_token: dict):

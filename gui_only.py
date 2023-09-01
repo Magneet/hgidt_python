@@ -4,7 +4,7 @@ from tktooltip import ToolTip
 from tkcalendar import DateEntry
 from tktimepicker import SpinTimePickerModern
 from tktimepicker import constants
-import configparser, os, horizon_functions, logging, sys,warnings, keyring,requests, json
+import configparser, os, horizon_functions, logging, sys,warnings, keyring,requests, json, threading
 from logging.handlers import RotatingFileHandler
 
 application_name = "hgidt"
@@ -64,9 +64,19 @@ if 'Connection_Servers' in config:
 else:
     config_connection_servers = []
 
-# Get password
 
+hvconnectionobj = None
+onetosixtyfour = list(range(1,65))
+memory_start_value = 1024
+memory_end_value = 257600
+memory_increment = 1024
+memory_list = []
+current_memory = memory_start_value
 
+while current_memory <= memory_end_value:
+    memory_list.append(current_memory)
+    current_memory += memory_increment
+logo_image="hgidt_logo.ico"
 #endregion
 
 #region Configuration related functions
@@ -164,19 +174,40 @@ def show_password_dialog():
 
 #region functions for button handling of VDI tab
 
+def VDI_Apply_Golden_Image_button():
+    global global_vdi_selected_pool, global_vdi_selected_vm, global_vdi_selected_vm, hvconnectionobj, VDI_vtpm_checkbox_var
+    pod = global_vdi_selected_vm["pod"]
+    pool_id = global_vdi_selected_pool['id']
+    parent_vm_id = global_vdi_selected_vm['id']
+    snapshot_id = global_VDI_selected_snapshot['id']
+    VDI_Resize_checkbox_var_selected = VDI_Resize_checkbox_var.get()
+    VDI_CoresPerSocket_ComboBox_var_selected = VDI_CoresPerSocket_ComboBox_var.get()
+    VDI_CPUCount_ComboBox_var_selected = VDI_CPUCount_ComboBox_var.get()
+    VDI_Memory_ComboBox_var_selected = VDI_Memory_ComboBox_var.get()
+    if VDI_Resize_checkbox_var_selected == True and VDI_CoresPerSocket_ComboBox_var_selected and VDI_CPUCount_ComboBox_var_selected and VDI_Memory_ComboBox_var_selected:
+        compute_profile_num_cores_per_socket=VDI_CoresPerSocket_ComboBox_var.get()
+        compute_profile_num_cpus = VDI_CPUCount_ComboBox_var.get()
+        compute_profile_ram_mb = VDI_Memory_ComboBox_var.get()
+    else:
+        compute_profile_num_cores_per_socket = None
+        compute_profile_num_cpus = None
+        compute_profile_ram_mb = None
+    hvconnectionobj = connect_pod(pod=pod)
+    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+    horizon_inventory.desktop_pool_push_image(desktop_pool_id=pool_id,parent_vm_id=parent_vm_id,snapshot_id=snapshot_id, compute_profile_ram_mb = compute_profile_ram_mb, compute_profile_num_cpus=compute_profile_num_cpus, compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket, add_virtual_tpm = VDI_vtpm_checkbox_var.get(), logoff_policy=VDI_LofOffPolicy_Combobox_var.get() )
+    hvconnectionobj.hv_disconnect()
+    
+
 def VDI_DesktopPool_Combobox_callback(event):
     # print(VDI_DesktopPool_Combobox.get())
-    global global_desktop_pools, global_base_vms, VDI_Golden_Image_Combobox__selected_default,VDI_Golden_Image_Combobox_values
-    
+    global global_desktop_pools, global_base_vms, VDI_Golden_Image_Combobox__selected_default,VDI_Golden_Image_Combobox_values,global_vdi_selected_pool
     try:
         VDI_Golden_Image_Combobox_values.clear()
     except:
         VDI_Golden_Image_Combobox_values = []
-    
-    selected_pool = VDI_DesktopPool_Combobox_values[VDI_DesktopPool_Combobox.get()]
-    podname = selected_pool['pod']
-    vcenter_id = selected_pool['vcenter_id']
-
+    global_vdi_selected_pool = VDI_DesktopPool_Combobox_values[VDI_DesktopPool_Combobox_var.get()]
+    podname = global_vdi_selected_pool['pod']
+    vcenter_id = global_vdi_selected_pool['vcenter_id']
     optional_golden_images = [item for item in global_base_vms if item["vcenter_id"] == vcenter_id and "UNSUPPORTED_OS" not in item["incompatible_reasons"] ]
     VDI_Golden_Image_Combobox_values = {item["name"]: item for item in optional_golden_images}
     VDI_Golden_Image_Combobox__selected_default = optional_golden_images[0]['name']
@@ -184,31 +215,53 @@ def VDI_DesktopPool_Combobox_callback(event):
     VDI_Golden_Image_Combobox.config(state='readonly')
     VDI_Golden_Image_Combobox.set(VDI_Golden_Image_Combobox__selected_default)
     VDI_Golden_Image_Combobox.event_generate("<<ComboboxSelected>>") 
-    
-def VDI_Golden_Image_Combobox_callback(event):
-    
-    global global_desktop_pools, global_base_vms, VDI_Snapshot_Combobox__selected_default, global_base_snapshots,VDI_Snapshot_Combobox_values
 
+def VDI_Golden_Image_Combobox_callback(event):
+    global global_desktop_pools, global_base_vms, VDI_Snapshot_Combobox__selected_default, global_base_snapshots,VDI_Snapshot_Combobox_values, global_vdi_selected_vm
     try:
         VDI_Snapshot_Combobox_values.clear()
     except:
         VDI_Snapshot_Combobox_values = []
-    
-    selected_vm = VDI_Golden_Image_Combobox_values[VDI_Golden_Image_Combobox.get()]
+    global_vdi_selected_vm = VDI_Golden_Image_Combobox_values[VDI_Golden_Image_Combobox_var.get()]
 
-    podname = selected_vm['pod']
-    vcenter_id = selected_vm['vcenter_id']
-    basevm_id = selected_vm['id']
+    podname = global_vdi_selected_vm['pod']
+    vcenter_id = global_vdi_selected_vm['vcenter_id']
+    basevm_id = global_vdi_selected_vm['id']
     optional_snapshots = [item for item in global_base_snapshots if item["vcenter_id"] == vcenter_id and item["basevmid"] == basevm_id]
-    for i in optional_snapshots:
-        print(i)
     VDI_Snapshot_Combobox_values = {item["name"]: item for item in optional_snapshots}
     VDI_Snapshot_Combobox__selected_default = optional_snapshots[0]['name']
     VDI_Snapshot_Combobox['values'] = list(VDI_Snapshot_Combobox_values.keys())
     VDI_Snapshot_Combobox.config(state='readonly')
     VDI_Snapshot_Combobox.set(VDI_Snapshot_Combobox__selected_default)
     VDI_Snapshot_Combobox.event_generate("<<ComboboxSelected>>") 
-    
+
+def VDI_Snapshot_Combobox_callback(event):
+    global global_VDI_selected_snapshot
+    global_VDI_selected_snapshot = VDI_Snapshot_Combobox_values[VDI_Snapshot_Combobox_var.get()]
+    VDI_LofOffPolicy_Combobox.config(state='readonly')
+    VDI_Resize_checkbox.config(state="enabled")
+    VDI_Enable_datetimepicker_checkbox.config(state='enabled')
+    VDI_secondaryimage_checkbox.config(state='enabled')
+    VDI_vtpm_checkbox.config(state='enabled')
+    VDI_StopOnError_checkbox.config(state='enabled')
+    VDI_Apply_Golden_Image_button.config(state='enabled')
+
+def VDI_Resize_checkbox_callback():
+    if VDI_Resize_checkbox_var.get() == True:
+        VDI_CoresPerSocket_ComboBox.config(state='readonly')
+        VDI_CPUCount_ComboBox.config(state='readonly')
+        VDI_Memory_ComboBox.config(state='readonly')
+    else:
+        VDI_CoresPerSocket_ComboBox.config(state='disabled')
+        VDI_CPUCount_ComboBox.config(state='disabled')
+        VDI_Memory_ComboBox.config(state='disabled')
+        VDI_Enable_datetimepicker_checkbox
+
+def VDI_Enable_datetimepicker_checkbox_callback():
+    if VDI_Enable_datetimepicker_checkbox_var.get() == True:
+        VDI_cal.config(state='readonly')
+    else:
+        VDI_cal.config(state='disabled')
 #endregion
 
 #region functions for button handling of configuration tab
@@ -309,6 +362,10 @@ def config_reset_button_callback():
     logger.info("Configuration reset")
 
 def config_test_button_callback():
+    test_button_thread = threading.Thread(target=config_test_button_callback_thread)
+    test_button_thread.start()
+
+def config_test_button_callback_thread():
     logger.info("Testing configuration")
     config_status_label.config(text="Testing configuration")
     refresh_window()
@@ -342,7 +399,12 @@ def config_test_button_callback():
 #endregion
 
 #region Various functions
+
 def generic_Connect_Button_callback():
+    generic_connect_thread = threading.Thread(target=generic_Connect_Button_callback_thread)
+    generic_connect_thread.start()
+
+def generic_Connect_Button_callback_thread():
     global hvconnectionobj, global_desktop_pools, global_rds_farms, global_base_vms, global_base_snapshots, global_datacenters, global_vcenters,VDI_DesktopPool_Combobox_values,RDS_Farm_Combobox_values
     VDI_DesktopPool_Combobox.config(state='disabled')
     VDI_Golden_Image_Combobox.config(state='disabled')
@@ -369,6 +431,8 @@ def generic_Connect_Button_callback():
         VDI_DesktopPool_Combobox_values = []
         RDS_Farm_Combobox_values = []
     for pod in config_pods:
+        # thread_connect = threading.Thread(target=connect_pod(pod))
+        # thread_connect.start()
         hvconnectionobj = connect_pod(pod)
         if hvconnectionobj != False:
             horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
@@ -466,10 +530,17 @@ def generic_Connect_Button_callback():
     VDI_Statusbox_Label.config(text="Connected")
     RDS_Statusbox_Label.config(text="Connected")
 
-
 def connect_pod(pod:str):
-    global config_server_name
+    global connect_pod_thread_var
+    connect_pod_thread_var = []
+    connect_pod_thread_tmp = threading.Thread(target=connect_pod_thread(pod=pod))
+    connect_pod_thread_tmp.start()
+    return connect_pod_thread_var
+
+def connect_pod_thread(pod:str):
+    global config_server_name, hvconnectionobj, connect_pod_thread_var,config_connection_servers
     con_servers_to_use = [item for item in config_connection_servers if item["PodName"] == pod]
+    hvconnectionobj = None
     for con_server in con_servers_to_use:
         serverdns = con_server['ServerDNS']
         logger.info("connecting to: "+serverdns)
@@ -479,19 +550,20 @@ def connect_pod(pod:str):
             hvconnectionobj.hv_connect()
             logger.info("Connected to: "+serverdns)
             config_server_name = serverdns
-            return hvconnectionobj
+            connect_pod_thread_var = hvconnectionobj
+            break
         except Exception as e:
             logger.error("Failed to connect to: "+serverdns)
             logger.error(str(e))
-    return False
+            connect_pod_thread_var = False
 
 def refresh_window():
     # Redraw the window
     root.update()
     root.update_idletasks()
 
-def updateTime(time):
-    time_lbl.configure(text="{}:{}".format(*time)) # if you are using 24 hours, remove the 3rd flower bracket its for period
+# def updateTime(time):
+#     time_lbl.configure(text="{}:{}".format(*time)) # if you are using 24 hours, remove the 3rd flower bracket its for period
 
 def textbox_handle_focus_in(event,default_text):
     if event.widget.get() == default_text:
@@ -507,6 +579,11 @@ def textbox_handle_focus_out(event,default_text):
 # region Generic tkinter config
 root = tk.Tk()
 root.title("Horizon Golden Image Deployment Tool")
+
+# Set the custom icon/logo for the taskbar/Dock based on the platform
+root.iconbitmap(logo_image)  # Windows icon file
+
+
 root.geometry("1024x660")
 
 style = ttk.Style()
@@ -540,17 +617,17 @@ VDI_Connect_Button = ttk.Button(tab1, text="Connect", command=generic_Connect_Bu
 VDI_Connect_Button.place(x=750, y=30, width=160, height=25)
 
 
-VDI_Apply_Golden_Image_button = ttk.Button(tab1, text="Deploy Golden Image")
-VDI_Apply_Golden_Image_button.place(x=570, y=510, width=160, height=25)
+VDI_Apply_Golden_Image_button = ttk.Button(tab1, state="disabled", text="Deploy Golden Image",command=VDI_Apply_Golden_Image_button)
+VDI_Apply_Golden_Image_button.place(x=570, y=510, width=220, height=25)
 
-VDI_Apply_Secondary_Image_button = ttk.Button(tab1, text="Apply Secondary Image")
-VDI_Apply_Secondary_Image_button.place(x=570, y=456, width=160, height=25)
+VDI_Apply_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Apply Secondary Image")
+VDI_Apply_Secondary_Image_button.place(x=570, y=456, width=220, height=25)
 
-VDI_Cancel_Secondary_Image_button = ttk.Button(tab1, text="Cancel secondary Image")
-VDI_Cancel_Secondary_Image_button.place(x=570, y=430, width=160, height=25)
+VDI_Cancel_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Cancel secondary Image")
+VDI_Cancel_Secondary_Image_button.place(x=570, y=430, width=220, height=25)
 
-VDI_Promote_Secondary_Image_button = ttk.Button(tab1, text="Promote secondary Image")
-VDI_Promote_Secondary_Image_button.place(x=570, y=483, width=160, height=25)
+VDI_Promote_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Promote secondary Image")
+VDI_Promote_Secondary_Image_button.place(x=570, y=483, width=220, height=25)
 
 # Create Labels
 VDI_Statusbox_Label = tk.Label(tab1, borderwidth=1, text="Status: Not Connected", justify="right")
@@ -559,60 +636,72 @@ VDI_Statusbox_Label.place(x=430, y=537)
 
 # Create ComboBoxes
 VDI_DesktopPool_Combobox_var = tk.StringVar()
-VDI_DesktopPool_Combobox = ttk.Combobox(tab1, state="disabled")
+VDI_DesktopPool_Combobox = ttk.Combobox(tab1, state="disabled", textvariable=VDI_DesktopPool_Combobox_var)
 VDI_DesktopPool_Combobox.place(x=30, y=30, width=220, height=25)
 VDI_DesktopPool_Combobox.bind("<<ComboboxSelected>>",VDI_DesktopPool_Combobox_callback)
 ToolTip(VDI_DesktopPool_Combobox, msg="Select the desktop pool to update", delay=0.1)
 
-VDI_Golden_Image_Combobox = ttk.Combobox(tab1, state="disabled")
+VDI_Golden_Image_Combobox_var = tk.StringVar()
+VDI_Golden_Image_Combobox = ttk.Combobox(tab1, state="disabled", textvariable=VDI_Golden_Image_Combobox_var)
 VDI_Golden_Image_Combobox.place(x=270, y=30, width=220, height=25)
 VDI_Golden_Image_Combobox.bind("<<ComboboxSelected>>",VDI_Golden_Image_Combobox_callback)
 ToolTip(VDI_Golden_Image_Combobox, msg="Select the new source VM", delay=0.1)
 
-VDI_Snapshot_Combobox = ttk.Combobox(tab1, state="disabled")
+VDI_Snapshot_Combobox_var = tk.StringVar()
+VDI_Snapshot_Combobox = ttk.Combobox(tab1, state="disabled", textvariable=VDI_Snapshot_Combobox_var)
 VDI_Snapshot_Combobox.place(x=510, y=30, width=220, height=25)
+VDI_Snapshot_Combobox.bind("<<ComboboxSelected>>",VDI_Snapshot_Combobox_callback)
 ToolTip(VDI_Snapshot_Combobox, msg="Select the new source Snapshot", delay=0.1)
 
-VDI_LofOffPolicy_Combobox = ttk.Combobox(tab1, state="disabled")
+VDI_LofOffPolicy_Combobox_var = tk.StringVar()
+VDI_LofOffPolicy_Combobox = ttk.Combobox(tab1, state="disabled", values=["FORCE_LOGOFF","WAIT_FOR_LOGOFF"], textvariable=VDI_LofOffPolicy_Combobox_var)
+VDI_LofOffPolicy_Combobox_default_value = "WAIT_FOR_LOGOFF"
+VDI_LofOffPolicy_Combobox.set(VDI_LofOffPolicy_Combobox_default_value)
 VDI_LofOffPolicy_Combobox.place(x=570, y=110, width=160, height=25)
 ToolTip(VDI_LofOffPolicy_Combobox, msg="Select the logoff Policy", delay=0.1)
 
-VDI_Memory_ComboBox = ttk.Combobox(tab1, state="disabled")
+VDI_Memory_ComboBox_var = tk.StringVar()
+
+
+VDI_Memory_ComboBox = ttk.Combobox(tab1, state="disabled", values=memory_list,textvariable=VDI_Memory_ComboBox_var)
 VDI_Memory_ComboBox.place(x=570, y=160, width=160, height=25)
 ToolTip(VDI_Memory_ComboBox, msg="Select the new memory size", delay=0.1)
 
-VDI_CPUCount_ComboBox = ttk.Combobox(tab1, state="disabled")
+VDI_CPUCount_ComboBox_var = tk.StringVar()
+VDI_CPUCount_ComboBox = ttk.Combobox(tab1, state="disabled", values=onetosixtyfour, textvariable=VDI_CPUCount_ComboBox_var)
 VDI_CPUCount_ComboBox.place(x=570, y=190, width=160, height=25)
 ToolTip(VDI_CPUCount_ComboBox, msg="Select the new CPU count", delay=0.1)
 
-VDI_CoresPerSocket_ComboBox = ttk.Combobox(tab1, state="disabled")
+VDI_CoresPerSocket_ComboBox_var = tk.StringVar()
+VDI_CoresPerSocket_ComboBox = ttk.Combobox(tab1, state="disabled", values=onetosixtyfour,textvariable=VDI_CoresPerSocket_ComboBox_var)
 VDI_CoresPerSocket_ComboBox.place(x=570, y=220, width=160, height=25)
 ToolTip(VDI_CoresPerSocket_ComboBox, msg="Select the number of cores per socket", delay=0.1)
 
 # Create Checkboxes
 VDI_secondaryimage_checkbox_var = tk.BooleanVar()
-VDI_secondaryimage_checkbox = ttk.Checkbutton(tab1, text="Push as Secondary Image", variable=VDI_secondaryimage_checkbox_var)
+VDI_secondaryimage_checkbox = ttk.Checkbutton(tab1, state="disabled", text="Push as Secondary Image", variable=VDI_secondaryimage_checkbox_var)
 VDI_secondaryimage_checkbox.place(x=570, y=342)
 ToolTip(VDI_secondaryimage_checkbox, msg="Check to deploy the new golden image as a secondary image", delay=0.1)
 
 VDI_StopOnError_checkbox_var = tk.BooleanVar()
-VDI_StopOnError_checkbox = ttk.Checkbutton(tab1, text="Stop on error", variable=VDI_StopOnError_checkbox_var)
+VDI_StopOnError_checkbox = ttk.Checkbutton(tab1, state="disabled", text="Stop on error", variable=VDI_StopOnError_checkbox_var)
 VDI_StopOnError_checkbox.place(x=570, y=90)
 ToolTip(VDI_StopOnError_checkbox, msg="CHeck to make sure deployment of new desktops stops on an error", delay=0.1)
 VDI_StopOnError_checkbox_var.set(True)
 
 VDI_Resize_checkbox_var = tk.BooleanVar()
-VDI_Resize_checkbox = ttk.Checkbutton(tab1, text="Enable Resize Options", variable=VDI_Resize_checkbox_var)
+VDI_Resize_checkbox = ttk.Checkbutton(tab1, state="disabled" ,text="Enable Resize Options", variable=VDI_Resize_checkbox_var, command=VDI_Resize_checkbox_callback)
 VDI_Resize_checkbox.place(x=570, y=137)
 ToolTip(VDI_Resize_checkbox, msg="Check to enable resizing of the Golden Image in the Desktop Pool", delay=0.1)
+VDI_Resize_checkbox_var.set(False)
 
 VDI_vtpm_checkbox_var = tk.BooleanVar()
-VDI_vtpm_checkbox = ttk.Checkbutton(tab1, text="Add vTPM", variable=VDI_vtpm_checkbox_var)
+VDI_vtpm_checkbox = ttk.Checkbutton(tab1, state="disabled", text="Add vTPM", variable=VDI_vtpm_checkbox_var)
 VDI_vtpm_checkbox.place(x=570, y=70)
 ToolTip(VDI_vtpm_checkbox, msg="Check to add a vTPM", delay=0.1)
 
 VDI_Enable_datetimepicker_checkbox_var = tk.BooleanVar()
-VDI_Enable_datetimepicker_checkbox = ttk.Checkbutton(tab1, text="Schedule deployment", variable=VDI_Enable_datetimepicker_checkbox_var)
+VDI_Enable_datetimepicker_checkbox = ttk.Checkbutton(tab1, state="disabled", text="Schedule deployment", variable=VDI_Enable_datetimepicker_checkbox_var, command=VDI_Enable_datetimepicker_checkbox_callback)
 VDI_Enable_datetimepicker_checkbox.place(x=570, y=250)
 ToolTip(VDI_Enable_datetimepicker_checkbox, msg="Check to enable a scheduled deployment of the new image", delay=0.1)
 
