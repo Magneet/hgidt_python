@@ -1,0 +1,37 @@
+2023-09-03 11:41:06,408 - INFO - Testing configuration
+2023-09-03 11:41:06,442 - INFO - Testing connection to: pod1cbr1.loft.lab
+2023-09-03 11:41:10,639 - INFO - Sucessfully finished testing configuration
+2023-09-03 11:41:10,639 - INFO - Saving configuration since it works
+2023-09-03 11:41:10,639 - INFO - Saving configuration
+2023-09-03 11:41:10,640 - INFO - Configuration saved
+2023-09-03 11:41:12,691 - INFO - Saving configuration
+2023-09-03 11:41:12,693 - INFO - Configuration saved
+2023-09-03 11:41:16,051 - INFO - connecting to: Pod1cbr1.loft.lab
+2023-09-03 11:41:17,614 - INFO - Connected to: Pod1cbr1.loft.lab
+2023-09-03 11:41:27,395 - INFO - connecting to: Pod2cbr1.loft.lab
+2023-09-03 11:41:28,354 - INFO - Connected to: Pod2cbr1.loft.lab
+2023-09-03 11:42:22,481 - INFO - connecting to: Pod1cbr1.loft.lab
+2023-09-03 11:42:23,211 - INFO - Connected to: Pod1cbr1.loft.lab
+2023-09-03 12:03:01,521 - INFO - Testing configuration
+2023-09-03 12:03:01,553 - INFO - Testing connection to: pod1cbr1.loft.lab
+2023-09-03 12:03:04,294 - INFO - Sucessfully finished testing configuration
+2023-09-03 12:03:04,294 - INFO - Saving configuration since it works
+2023-09-03 12:03:04,294 - INFO - Saving configuration
+2023-09-03 12:03:04,440 - INFO - Configuration saved
+2023-09-03 12:03:05,955 - INFO - Saving configuration
+2023-09-03 12:03:05,956 - INFO - Configuration saved
+2023-09-03 12:03:12,801 - INFO - connecting to: Pod1cbr1.loft.lab
+2023-09-03 12:03:14,142 - INFO - Connected to: Pod1cbr1.loft.lab
+2023-09-03 12:03:24,240 - INFO - connecting to: Pod2cbr1.loft.lab
+2023-09-03 12:03:25,481 - INFO - Connected to: Pod2cbr1.loft.lab
+2023-09-03 12:05:00,262 - INFO - Password retreived from credentials store
+2023-09-03 12:05:06,609 - INFO - connecting to: Pod1cbr1.loft.lab
+2023-09-03 12:05:07,680 - INFO - Connected to: Pod1cbr1.loft.lab
+2023-09-03 12:05:15,919 - INFO - connecting to: Pod2cbr1.loft.lab
+2023-09-03 12:05:16,527 - INFO - Connected to: Pod2cbr1.loft.lab
+2023-09-03 12:05:34,155 - INFO - Saving configuration
+2023-09-03 12:05:34,196 - INFO - Password saved to credentials store
+2023-09-03 12:05:34,196 - INFO - Configuration saved
+2023-09-03 12:05:34,640 - INFO - Password removed from credentials store
+2023-09-03 12:05:34,641 - INFO - Saving configuration
+2023-09-03 12:05:34,642 - INFO - Configuration saved

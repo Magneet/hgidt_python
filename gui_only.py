@@ -4,7 +4,8 @@ from tktooltip import ToolTip
 from tkcalendar import DateEntry
 from tktimepicker import SpinTimePickerModern
 from tktimepicker import constants
-import configparser, os, horizon_functions, logging, sys,warnings, keyring,requests, json, threading
+from datetime import datetime,time as dt_time 
+import configparser, os, horizon_functions, logging, sys,warnings, keyring,requests, json, threading,time
 from logging.handlers import RotatingFileHandler
 
 application_name = "hgidt"
@@ -72,6 +73,7 @@ memory_end_value = 257600
 memory_increment = 1024
 memory_list = []
 current_memory = memory_start_value
+current_datetime = datetime.now()
 
 while current_memory <= memory_end_value:
     memory_list.append(current_memory)
@@ -175,7 +177,12 @@ def show_password_dialog():
 #region functions for button handling of VDI tab
 
 def VDI_Apply_Golden_Image_button():
-    global global_vdi_selected_pool, global_vdi_selected_vm, global_vdi_selected_vm, hvconnectionobj, VDI_vtpm_checkbox_var
+    global global_vdi_selected_pool, global_vdi_selected_vm, global_vdi_selected_vm, hvconnectionobj, VDI_vtpm_checkbox_var, VDI_hour_spin, VDI_minute_spin, VDI_cal
+    if VDI_Enable_datetimepicker_checkbox_var.get() == True:
+        datetime_var= get_selected_datetime(VDI_cal,VDI_hour_spin,VDI_minute_spin)
+        start_time= datetime.timestamp(datetime_var)*1000
+    else:
+        start_time = time.time()
     pod = global_vdi_selected_vm["pod"]
     pool_id = global_vdi_selected_pool['id']
     parent_vm_id = global_vdi_selected_vm['id']
@@ -194,7 +201,7 @@ def VDI_Apply_Golden_Image_button():
         compute_profile_ram_mb = None
     hvconnectionobj = connect_pod(pod=pod)
     horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-    horizon_inventory.desktop_pool_push_image(desktop_pool_id=pool_id,parent_vm_id=parent_vm_id,snapshot_id=snapshot_id, compute_profile_ram_mb = compute_profile_ram_mb, compute_profile_num_cpus=compute_profile_num_cpus, compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket, add_virtual_tpm = VDI_vtpm_checkbox_var.get(), logoff_policy=VDI_LofOffPolicy_Combobox_var.get() )
+    horizon_inventory.desktop_pool_push_image(desktop_pool_id=pool_id,parent_vm_id=parent_vm_id,snapshot_id=snapshot_id, compute_profile_ram_mb = compute_profile_ram_mb, compute_profile_num_cpus=compute_profile_num_cpus, compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket, add_virtual_tpm = VDI_vtpm_checkbox_var.get(), logoff_policy=VDI_LofOffPolicy_Combobox_var.get(), start_time=start_time )
     hvconnectionobj.hv_disconnect()
     
 
@@ -260,8 +267,12 @@ def VDI_Resize_checkbox_callback():
 def VDI_Enable_datetimepicker_checkbox_callback():
     if VDI_Enable_datetimepicker_checkbox_var.get() == True:
         VDI_cal.config(state='readonly')
+        VDI_minute_spin.config(state='normal')
+        VDI_hour_spin.config(state='normal')
     else:
         VDI_cal.config(state='disabled')
+        VDI_minute_spin.config(state='disabled')
+        VDI_hour_spin.config(state='disabled')
 #endregion
 
 #region functions for button handling of configuration tab
@@ -302,7 +313,6 @@ def config_save_button_callback():
     config_username = config_username_textbox.get()
     config_domain = config_domain_textbox.get()
     config_server_name = config_conserver_combobox.get()
-    print(config_username)
     if config_username == config_username_textbox_default_text or config_domain == config_domain_textbox_default_text or config_server_name == config_conserver_combobox_default_text or config_password == None:
         config_username = None
         config_domain = None
@@ -400,135 +410,153 @@ def config_test_button_callback_thread():
 
 #region Various functions
 
+def get_selected_datetime(cal,hours,minutes):
+    date_var = cal.get_date()
+    hours_var = int(hours.get())
+    minutes_var = int(minutes.get())
+    selected_datetime = datetime.combine(date_var, dt_time(hours_var, minutes_var))
+    return selected_datetime
+
 def generic_Connect_Button_callback():
     generic_connect_thread = threading.Thread(target=generic_Connect_Button_callback_thread)
     generic_connect_thread.start()
 
 def generic_Connect_Button_callback_thread():
-    global hvconnectionobj, global_desktop_pools, global_rds_farms, global_base_vms, global_base_snapshots, global_datacenters, global_vcenters,VDI_DesktopPool_Combobox_values,RDS_Farm_Combobox_values
-    VDI_DesktopPool_Combobox.config(state='disabled')
-    VDI_Golden_Image_Combobox.config(state='disabled')
-    VDI_Snapshot_Combobox.config(state='disabled')
-    VDI_Statusbox_Label.config(text="Connecting")
-    RDS_Statusbox_Label.config(text="Connecting")
-    refresh_window()
-    try:
-        global_rds_farms.clear()
-        global_desktop_pools.clear()
-        global_base_vms.clear()
-        global_base_snapshots.clear()
-        global_datacenters.clear()
-        global_vcenters.clear()
-        VDI_DesktopPool_Combobox_values.clear()
-        RDS_Farm_Combobox_values.clear()
-    except:
-        global_rds_farms=[]
-        global_desktop_pools=[]
-        global_base_vms=[]
-        global_base_snapshots=[]
-        global_datacenters=[]
-        global_vcenters=[]
-        VDI_DesktopPool_Combobox_values = []
-        RDS_Farm_Combobox_values = []
-    for pod in config_pods:
-        # thread_connect = threading.Thread(target=connect_pod(pod))
-        # thread_connect.start()
-        hvconnectionobj = connect_pod(pod)
-        if hvconnectionobj != False:
-            horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-            horizon_config = horizon_functions.Config(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-            horizon_External = horizon_functions.External(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-            vdi_filter = {}
-            vdi_filter["type"] = "And"
-            vdi_filter["filters"] = []
-            vdi_filter1={}
-            vdi_filter1["type"] = "Equals"
-            vdi_filter1["name"] = "source"
-            vdi_filter1["value"] = "INSTANT_CLONE"
-            vdi_filter2={}
-            vdi_filter2["type"] = "Equals"
-            vdi_filter2["name"] = "type"
-            vdi_filter2["value"] = "AUTOMATED"
-            vdi_filter["filters"].append(vdi_filter1)
-            vdi_filter["filters"].append(vdi_filter2)
-            rds_filter = {}
-            rds_filter["type"] = "Equals"
-            rds_filter["name"] = "automated_farm_settings.image_source"
-            rds_filter["value"] = "VIRTUAL_CENTER"
-            desktop_pools=horizon_inventory.get_desktop_pools(filter=vdi_filter)
-            for pool in desktop_pools:
-                pool['pod'] = pod
-            global_desktop_pools+=desktop_pools
+    global hvconnectionobj, global_desktop_pools, global_rds_farms, global_base_vms, global_base_snapshots, global_datacenters, global_vcenters,VDI_DesktopPool_Combobox_values,RDS_Farm_Combobox_values,config_password
+    if config_server_name is None and config_password is None:
+        VDI_Statusbox_Label.config(text="Please configure the connection details first on the Configuration tab")
+        RDS_Statusbox_Label.config(text="Please configure the connection details first on the Configuration tab")
+        refresh_window()
+        return
+    elif config_server_name is not None and config_password is None:
+        VDI_Statusbox_Label.config(text="Please configure the password first on the Configuration tab")
+        RDS_Statusbox_Label.config(text="Please configure the password first on the Configuration tab")
+        refresh_window()
+        return
+    else:
+        VDI_DesktopPool_Combobox.config(state='disabled')
+        VDI_Golden_Image_Combobox.config(state='disabled')
+        VDI_Snapshot_Combobox.config(state='disabled')
+        VDI_Statusbox_Label.config(text="Connecting")
+        RDS_Statusbox_Label.config(text="Connecting")
+        refresh_window()
+        try:
+            global_rds_farms.clear()
+            global_desktop_pools.clear()
+            global_base_vms.clear()
+            global_base_snapshots.clear()
+            global_datacenters.clear()
+            global_vcenters.clear()
+            VDI_DesktopPool_Combobox_values.clear()
+            RDS_Farm_Combobox_values.clear()
+        except:
+            global_rds_farms=[]
+            global_desktop_pools=[]
+            global_base_vms=[]
+            global_base_snapshots=[]
+            global_datacenters=[]
+            global_vcenters=[]
+            VDI_DesktopPool_Combobox_values = []
+            RDS_Farm_Combobox_values = []
+        for pod in config_pods:
+            # thread_connect = threading.Thread(target=connect_pod(pod))
+            # thread_connect.start()
+            hvconnectionobj = connect_pod(pod)
+            if hvconnectionobj != False:
+                horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+                horizon_config = horizon_functions.Config(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+                horizon_External = horizon_functions.External(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+                vdi_filter = {}
+                vdi_filter["type"] = "And"
+                vdi_filter["filters"] = []
+                vdi_filter1={}
+                vdi_filter1["type"] = "Equals"
+                vdi_filter1["name"] = "source"
+                vdi_filter1["value"] = "INSTANT_CLONE"
+                vdi_filter2={}
+                vdi_filter2["type"] = "Equals"
+                vdi_filter2["name"] = "type"
+                vdi_filter2["value"] = "AUTOMATED"
+                vdi_filter["filters"].append(vdi_filter1)
+                vdi_filter["filters"].append(vdi_filter2)
+                rds_filter = {}
+                rds_filter["type"] = "Equals"
+                rds_filter["name"] = "automated_farm_settings.image_source"
+                rds_filter["value"] = "VIRTUAL_CENTER"
+                desktop_pools=horizon_inventory.get_desktop_pools(filter=vdi_filter)
+                for pool in desktop_pools:
+                    pool['pod'] = pod
+                global_desktop_pools+=desktop_pools
 
-            rds_farms=horizon_inventory.get_farms(filter=rds_filter)
-            for farm in rds_farms:
-                farm['pod'] = pod
-            global_rds_farms+=rds_farms
+                rds_farms=horizon_inventory.get_farms(filter=rds_filter)
+                for farm in rds_farms:
+                    farm['pod'] = pod
+                global_rds_farms+=rds_farms
 
-            vcenters = horizon_config.get_virtual_centers()
-            for vcenter in vcenters:
-                vcenter['pod'] = pod
-                datacenters = horizon_External.get_datacenters(vcenter_id=vcenter['id'])
-                for datacenter in datacenters:
-                    datacenter['pod'] = pod
-                    basevms = horizon_External.get_base_vms(vcenter_id=vcenter['id'], datacenter_id=datacenter['id'],filter_incompatible_vms=True)
-                    for basevm in basevms:
-                        basevm['pod'] = pod
-                        basesnapshots = horizon_External.get_base_snapshots(vcenter_id=vcenter['id'],base_vm_id=basevm['id'])
-                        if len(basesnapshots) < 1:
-                            basevms.remove(basevm)
-                        else:
-                            for basesnapshot in basesnapshots:
-                                basesnapshot['basevmid'] = basevm['id']
-                            global_base_snapshots+=basesnapshots
-                    global_base_vms+=basevms
-                global_datacenters+=datacenter
-            global_vcenters+=vcenters
-            hvconnectionobj.hv_disconnect()
-    try:
-        vdi_name_dict_mapping.clear()
-        rds_name_dict_mapping.clear()
-    except:
-        vdi_name_dict_mapping = []
-        rds_name_dict_mapping = []
+                vcenters = horizon_config.get_virtual_centers()
+                for vcenter in vcenters:
+                    vcenter['pod'] = pod
+                    datacenters = horizon_External.get_datacenters(vcenter_id=vcenter['id'])
+                    for datacenter in datacenters:
+                        datacenter['pod'] = pod
+                        basevms = horizon_External.get_base_vms(vcenter_id=vcenter['id'], datacenter_id=datacenter['id'],filter_incompatible_vms=True)
+                        for basevm in basevms:
+                            basevm['pod'] = pod
+                            basesnapshots = horizon_External.get_base_snapshots(vcenter_id=vcenter['id'],base_vm_id=basevm['id'])
+                            if len(basesnapshots) < 1:
+                                basevms.remove(basevm)
+                            else:
+                                for basesnapshot in basesnapshots:
+                                    basesnapshot['basevmid'] = basevm['id']
+                                global_base_snapshots+=basesnapshots
+                        global_base_vms+=basevms
+                    global_datacenters+=datacenter
+                global_vcenters+=vcenters
+                hvconnectionobj.hv_disconnect()
+        try:
+            vdi_name_dict_mapping.clear()
+            rds_name_dict_mapping.clear()
+        except:
+            vdi_name_dict_mapping = []
+            rds_name_dict_mapping = []
 
-    for pool in global_desktop_pools:
-        name = pool['name']
-        if name in vdi_name_dict_mapping:
-            pod_tmp=pool['pod']
-            new_name = f'{name} ({pod_tmp}])'
-            pool['name'] = new_name
-        else:
-            vdi_name_dict_mapping.append(name)
+        for pool in global_desktop_pools:
+            name = pool['name']
+            if name in vdi_name_dict_mapping:
+                pod_tmp=pool['pod']
+                new_name = f'{name} ({pod_tmp}])'
+                pool['name'] = new_name
+            else:
+                vdi_name_dict_mapping.append(name)
 
-    for farm in global_rds_farms:
-        name = farm['name']
-        if name in rds_name_dict_mapping:
-            pod_tmp=farm['pod']
-            new_name = f'{name} ({pod_tmp}])'
-            farm['name'] = new_name
-        else:
-            rds_name_dict_mapping.append(name)
-        # print(name_dict_mapping)
-        # print(pool['name'])
-    VDI_DesktopPool_Combobox_values = {item["name"]: item for item in global_desktop_pools}
-    VDI_DesktopPool_Combobox__selected_default = global_desktop_pools[0]['name']
-    VDI_DesktopPool_Combobox['values'] = list(VDI_DesktopPool_Combobox_values.keys())
-    VDI_DesktopPool_Combobox.config(state='readonly')
-    VDI_DesktopPool_Combobox.set(VDI_DesktopPool_Combobox__selected_default)
-    VDI_DesktopPool_Combobox.event_generate("<<ComboboxSelected>>") 
-    
-    RDS_Farm_Combobox_values = {item["name"]: item for item in global_rds_farms}
-    RDS_Farm_Combobox__selected_default = global_rds_farms[0]['name']
-    RDS_Farm_Combobox['values'] = list(RDS_Farm_Combobox_values.keys())
-    RDS_Farm_Combobox.config(state='readonly')
-    RDS_Farm_Combobox.set(RDS_Farm_Combobox__selected_default)
-    RDS_Farm_Combobox.event_generate("<<ComboboxSelected>>") 
-    
-    VDI_Connect_Button.config(text="Refresh")
-    RDS_Connect_Button.config(text="Refresh")
-    VDI_Statusbox_Label.config(text="Connected")
-    RDS_Statusbox_Label.config(text="Connected")
+        for farm in global_rds_farms:
+            name = farm['name']
+            if name in rds_name_dict_mapping:
+                pod_tmp=farm['pod']
+                new_name = f'{name} ({pod_tmp}])'
+                farm['name'] = new_name
+            else:
+                rds_name_dict_mapping.append(name)
+            # print(name_dict_mapping)
+            # print(pool['name'])
+        VDI_DesktopPool_Combobox_values = {item["name"]: item for item in global_desktop_pools}
+        VDI_DesktopPool_Combobox__selected_default = global_desktop_pools[0]['name']
+        VDI_DesktopPool_Combobox['values'] = list(VDI_DesktopPool_Combobox_values.keys())
+        VDI_DesktopPool_Combobox.config(state='readonly')
+        VDI_DesktopPool_Combobox.set(VDI_DesktopPool_Combobox__selected_default)
+        VDI_DesktopPool_Combobox.event_generate("<<ComboboxSelected>>") 
+        
+        RDS_Farm_Combobox_values = {item["name"]: item for item in global_rds_farms}
+        RDS_Farm_Combobox__selected_default = global_rds_farms[0]['name']
+        RDS_Farm_Combobox['values'] = list(RDS_Farm_Combobox_values.keys())
+        RDS_Farm_Combobox.config(state='readonly')
+        RDS_Farm_Combobox.set(RDS_Farm_Combobox__selected_default)
+        RDS_Farm_Combobox.event_generate("<<ComboboxSelected>>") 
+        
+        VDI_Connect_Button.config(text="Refresh")
+        RDS_Connect_Button.config(text="Refresh")
+        VDI_Statusbox_Label.config(text="Connected")
+        RDS_Statusbox_Label.config(text="Connected")
 
 def connect_pod(pod:str):
     global connect_pod_thread_var
@@ -680,7 +708,7 @@ ToolTip(VDI_CoresPerSocket_ComboBox, msg="Select the number of cores per socket"
 # Create Checkboxes
 VDI_secondaryimage_checkbox_var = tk.BooleanVar()
 VDI_secondaryimage_checkbox = ttk.Checkbutton(tab1, state="disabled", text="Push as Secondary Image", variable=VDI_secondaryimage_checkbox_var)
-VDI_secondaryimage_checkbox.place(x=570, y=342)
+VDI_secondaryimage_checkbox.place(x=570, y=390)
 ToolTip(VDI_secondaryimage_checkbox, msg="Check to deploy the new golden image as a secondary image", delay=0.1)
 
 VDI_StopOnError_checkbox_var = tk.BooleanVar()
@@ -712,13 +740,26 @@ VDI_Status_Textblock.place(x=30, y=80, height=305, width=510)
 VDI_Machines_ListBox = tk.Listbox(tab1, selectmode="multiple")
 VDI_Machines_ListBox.place(x=30, y=413, height=150, width=300)
 
-VDI_cal = DateEntry(tab1,bg="darkblue",fg="white",year=2023)
+VDI_cal = DateEntry(tab1,bg="darkblue",fg="white", year=current_datetime.year, month=current_datetime.month, day=current_datetime.day)
+# VDI_cal = Calendar(tab1,bg="darkblue",fg="white", selectmode="day", year=current_datetime.year, month=current_datetime.month, day=current_datetime.day)
 VDI_cal.config(state="disabled")
 VDI_cal.place(x=570,y=280)
 
-VDI_TimePicker = SpinTimePickerModern(tab1)
-VDI_TimePicker.addAll(constants.HOURS24)  # adds hours clock, minutes and period
-VDI_TimePicker.place(x=570,y=310)
+
+VDI_hour_label = ttk.Label(tab1, text="Hour:")
+VDI_hour_label.place(x=570, y=310)
+VDI_hour_spin = tk.Spinbox(tab1, from_=0, to=23, width=2, value=current_datetime.hour, state="disabled")
+VDI_hour_spin.place(x=570, y=340)
+
+VDI_minute_label = ttk.Label(tab1, text="Minute:", anchor='w')
+VDI_minute_label.place(x=650, y=310)
+VDI_minute_spin = tk.Spinbox(tab1, from_=0, to=59, width=2, value=current_datetime.minute, state="disabled")
+VDI_minute_spin.place(x=650, y=340)
+
+
+# VDI_TimePicker = SpinTimePickerModern(tab1)
+# VDI_TimePicker.addAll(constants.HOURS24)  # adds hours clock, minutes and period
+# VDI_TimePicker.place(x=570,y=310)
 
 #endregion
 
