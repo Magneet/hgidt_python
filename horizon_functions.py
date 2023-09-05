@@ -322,6 +322,10 @@ class Inventory:
             page += 1
             response = int_get_desktop_pools(self,page = page, maxpagesize= maxpagesize, filter = filter)
             results += response.json()
+        if isinstance(results, list):
+            results = results
+        else:
+            results = [results]
         return results
 
     def get_desktop_pool(self, desktop_pool_id: str) -> dict:
@@ -380,6 +384,10 @@ class Inventory:
             page += 1
             response = int_get_farms_v3(self,page = page, maxpagesize= maxpagesize, filter = filter)
             results += response.json()
+        if isinstance(results, list):
+            results = results
+        else:
+            results = [results]
         return results
 
     def get_farm(self, farm_id:str) -> dict:
@@ -500,7 +508,12 @@ class External:
             except requests.exceptions.RequestException as e:
                 raise "Error: " + str(e)
             else:
-                return response.json()
+                results=response.json()
+                if isinstance(results, list):
+                    results = results
+                else:
+                    results = [results]
+                return results
 
     def get_base_vms(self, vcenter_id : str,filter_incompatible_vms: bool="", datacenter_id:str="" ) -> list:
         """Lists all the VMs from a vCenter or a datacenter in that vCenter which may be suitable as snapshots for instant/linked clone desktop or farm creation.
@@ -530,7 +543,12 @@ class External:
             except requests.exceptions.RequestException as e:
                 raise "Error: " + str(e)
             else:
-                return response.json()
+                results=response.json()
+                if isinstance(results, list):
+                    results = results
+                else:
+                    results = [results]
+                return results
 
     def get_base_snapshots(self, vcenter_id : str, base_vm_id:str ) -> list:
         """Lists all the VM snapshots from the vCenter for a given VM.
@@ -554,4 +572,9 @@ class External:
             except requests.exceptions.RequestException as e:
                 raise "Error: " + str(e)
             else:
-                return response.json()
+                results=response.json()
+                if isinstance(results, list):
+                    results = results
+                else:
+                    results = [results]
+                return results

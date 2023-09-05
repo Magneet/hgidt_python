@@ -176,7 +176,7 @@ def show_password_dialog():
 
 #region functions for button handling of VDI tab
 
-def VDI_Apply_Golden_Image_button():
+def VDI_Apply_Golden_Image_button_callback():
     global global_vdi_selected_pool, global_vdi_selected_vm, global_vdi_selected_vm, hvconnectionobj, VDI_vtpm_checkbox_var, VDI_hour_spin, VDI_minute_spin, VDI_cal
     if VDI_Enable_datetimepicker_checkbox_var.get() == True:
         datetime_var= get_selected_datetime(VDI_cal,VDI_hour_spin,VDI_minute_spin)
@@ -206,15 +206,72 @@ def VDI_Apply_Golden_Image_button():
     
 
 def VDI_DesktopPool_Combobox_callback(event):
-    # print(VDI_DesktopPool_Combobox.get())
-    global global_desktop_pools, global_base_vms, VDI_Golden_Image_Combobox__selected_default,VDI_Golden_Image_Combobox_values,global_vdi_selected_pool
+    global global_desktop_pools, global_base_vms, VDI_Golden_Image_Combobox__selected_default,VDI_Golden_Image_Combobox_values,global_vdi_selected_pool,global_base_snapshots
+    VDI_Apply_Golden_Image_button.config(state="disabled")
+    VDI_Apply_Secondary_Image_button.config(state="disabled")
+    VDI_Cancel_Secondary_Image_button.config(state="disabled")
+    VDI_Enable_datetimepicker_checkbox.config(state="disabled")
+    VDI_CPUCount_ComboBox.config(state="disabled")
+    VDI_cal.config(state="disabled")
+    VDI_Golden_Image_Combobox.config(state="disabled")
+    VDI_Snapshot_Combobox.config(state="disabled")
+    VDI_vtpm_checkbox.config(state="disabled")
+    VDI_LofOffPolicy_Combobox.config(state="disabled")
+    VDI_Resize_checkbox.config(state="disabled")
+    
     try:
         VDI_Golden_Image_Combobox_values.clear()
     except:
         VDI_Golden_Image_Combobox_values = []
     global_vdi_selected_pool = VDI_DesktopPool_Combobox_values[VDI_DesktopPool_Combobox_var.get()]
+    # print(global_vdi_selected_pool)
+    pool_name = global_vdi_selected_pool["name"]
+    pool_displayname = global_vdi_selected_pool["display_name"]
     podname = global_vdi_selected_pool['pod']
+    if global_vdi_selected_pool["enabled"] == True:
+        state = "Enabled"
+    else:
+        state = "Disabled"
+    if global_vdi_selected_pool["enable_provisioning"] == True:
+        provisioning_state = "Enabled"
+    else:
+        provisioning_state = "Disabled"
     vcenter_id = global_vdi_selected_pool['vcenter_id']
+    prinary_basevm_id =global_vdi_selected_pool["provisioning_settings"]["parent_vm_id"]
+    primary_snapshot_id = global_vdi_selected_pool["provisioning_settings"]["base_snapshot_id"]
+    
+    
+    try:
+        provisioning_progress = global_vdi_selected_pool["provisioning_status_data"]["instant_clone_pending_image_progress"]
+    except:
+        provisioning_progress = "N/A"
+    tpm_state = global_vdi_selected_pool["provisioning_settings"]["add_virtual_tpm"]
+    try:
+        deployment_time = datetime.fromtimestamp(global_vdi_selected_pool["provisioning_status_data"]["instant_clone_push_image_settings"]["start_time"] / 1000)
+    except:
+        deployment_time = "N/A"
+    primary_basevm_name = [item for item in global_base_vms if item["id"] == prinary_basevm_id][0]["name"]
+    primary_basesnapshot_name = [item for item in global_base_snapshots if item["id"] == primary_snapshot_id][0]["name"]
+    try:
+        secondary_basevm_id =global_vdi_selected_pool["provisioning_status_data"]["instant_clone_pending_image_parent_vm_id"]
+        secondary_basevm_name = [item for item in global_base_vms if item["id"] == secondary_basevm_id][0]["name"]
+    except:
+        secondary_basevm_name = "N/A"
+    try:
+        secondary_snapshot_id = global_vdi_selected_pool["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]
+        secondary_basesnapshot_name = [item for item in global_base_snapshots if item["id"] == secondary_snapshot_id][0]["name"]
+    except:
+        secondary_basesnapshot_name = "N/A"
+    pool_id = global_vdi_selected_pool["id"]
+    current_image_state = global_vdi_selected_pool["provisioning_status_data"]["instant_clone_current_image_state"]
+    instant_clone_operation = global_vdi_selected_pool["provisioning_status_data"]["instant_clone_operation"]
+    try:
+        instant_clone_pending_image_state = global_vdi_selected_pool["provisioning_status_data"]["instant_clone_pending_image_state"]
+    except:
+        instant_clone_pending_image_state = "N/A"
+    vdi_textblock_text = f"Desktop Pool Status:\nName: {pool_name}\nDisplay Name: {pool_displayname}\nDesktop Pool State = {state}\nProvisioning State = {provisioning_state}\nCurrent Image State = {current_image_state}\nInstant Clone Operation = {instant_clone_operation}\nImage Deployment time = {deployment_time}\nBase VM = {primary_basevm_name}\nBase Snapshot = {primary_basesnapshot_name}\nSecondary or Pending VM = {secondary_basevm_name}\nSecondary or Pending SNapshot = {secondary_basesnapshot_name}\nPending Image State = {instant_clone_pending_image_state}\nPending Image Progress = {provisioning_progress}"
+    VDI_Status_Textblock.delete(tk.END)
+    VDI_Status_Textblock.insert(tk.END, vdi_textblock_text)
     optional_golden_images = [item for item in global_base_vms if item["vcenter_id"] == vcenter_id and "UNSUPPORTED_OS" not in item["incompatible_reasons"] ]
     VDI_Golden_Image_Combobox_values = {item["name"]: item for item in optional_golden_images}
     VDI_Golden_Image_Combobox__selected_default = optional_golden_images[0]['name']
@@ -500,9 +557,17 @@ def generic_Connect_Button_callback_thread():
                     for datacenter in datacenters:
                         datacenter['pod'] = pod
                         basevms = horizon_External.get_base_vms(vcenter_id=vcenter['id'], datacenter_id=datacenter['id'],filter_incompatible_vms=True)
+                        if isinstance(basevms, list):
+                            basevms = basevms
+                        else:
+                            basevms = [basevms]
                         for basevm in basevms:
                             basevm['pod'] = pod
                             basesnapshots = horizon_External.get_base_snapshots(vcenter_id=vcenter['id'],base_vm_id=basevm['id'])
+                            if isinstance(basesnapshots, list):
+                                basesnapshots = basesnapshots
+                            else:
+                                basesnapshots = [basesnapshots]
                             if len(basesnapshots) < 1:
                                 basevms.remove(basevm)
                             else:
@@ -645,7 +710,7 @@ VDI_Connect_Button = ttk.Button(tab1, text="Connect", command=generic_Connect_Bu
 VDI_Connect_Button.place(x=750, y=30, width=160, height=25)
 
 
-VDI_Apply_Golden_Image_button = ttk.Button(tab1, state="disabled", text="Deploy Golden Image",command=VDI_Apply_Golden_Image_button)
+VDI_Apply_Golden_Image_button = ttk.Button(tab1, state="disabled", text="Deploy Golden Image",command=VDI_Apply_Golden_Image_button_callback)
 VDI_Apply_Golden_Image_button.place(x=570, y=510, width=220, height=25)
 
 VDI_Apply_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Apply Secondary Image")
