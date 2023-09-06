@@ -175,8 +175,22 @@ def show_password_dialog():
 #endregion
 
 #region functions for button handling of VDI tab
+def VDI_Cancel_Secondary_Image_button_callback():
+    global global_vdi_selected_pool
+    hvconnectionobj = connect_pod(pod=global_vdi_selected_pool["pod"])
+    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+    horizon_inventory.cancel_desktop_pool_push_image(desktop_pool_id=global_vdi_selected_pool["id"])
+    hvconnectionobj.hv_disconnect()
+    
+def VDI_Promote_Secondary_Image_button_callback():    
+    global global_vdi_selected_pool
+    hvconnectionobj = connect_pod(pod=global_vdi_selected_pool["pod"])
+    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+    horizon_inventory.promote_pending_desktop_pool_image(desktop_pool_id=global_vdi_selected_pool["id"])
+    hvconnectionobj.hv_disconnect()
 
 def VDI_Apply_Golden_Image_button_callback():
+    
     global global_vdi_selected_pool, global_vdi_selected_vm, global_vdi_selected_vm, hvconnectionobj, VDI_vtpm_checkbox_var, VDI_hour_spin, VDI_minute_spin, VDI_cal
     if VDI_Enable_datetimepicker_checkbox_var.get() == True:
         datetime_var= get_selected_datetime(VDI_cal,VDI_hour_spin,VDI_minute_spin)
@@ -191,6 +205,7 @@ def VDI_Apply_Golden_Image_button_callback():
     VDI_CoresPerSocket_ComboBox_var_selected = VDI_CoresPerSocket_ComboBox_var.get()
     VDI_CPUCount_ComboBox_var_selected = VDI_CPUCount_ComboBox_var.get()
     VDI_Memory_ComboBox_var_selected = VDI_Memory_ComboBox_var.get()
+    
     if VDI_Resize_checkbox_var_selected == True and VDI_CoresPerSocket_ComboBox_var_selected and VDI_CPUCount_ComboBox_var_selected and VDI_Memory_ComboBox_var_selected:
         compute_profile_num_cores_per_socket=VDI_CoresPerSocket_ComboBox_var.get()
         compute_profile_num_cpus = VDI_CPUCount_ComboBox_var.get()
@@ -201,7 +216,7 @@ def VDI_Apply_Golden_Image_button_callback():
         compute_profile_ram_mb = None
     hvconnectionobj = connect_pod(pod=pod)
     horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-    horizon_inventory.desktop_pool_push_image(desktop_pool_id=pool_id,parent_vm_id=parent_vm_id,snapshot_id=snapshot_id, compute_profile_ram_mb = compute_profile_ram_mb, compute_profile_num_cpus=compute_profile_num_cpus, compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket, add_virtual_tpm = VDI_vtpm_checkbox_var.get(), logoff_policy=VDI_LofOffPolicy_Combobox_var.get(), start_time=start_time )
+    horizon_inventory.desktop_pool_push_image(desktop_pool_id=pool_id,parent_vm_id=parent_vm_id,snapshot_id=snapshot_id, compute_profile_ram_mb = compute_profile_ram_mb, compute_profile_num_cpus=compute_profile_num_cpus, compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket, add_virtual_tpm = VDI_vtpm_checkbox_var.get(), logoff_policy=VDI_LofOffPolicy_Combobox_var.get(), start_time=start_time, selective_push_image=VDI_secondaryimage_checkbox_var.get() )
     hvconnectionobj.hv_disconnect()
     
 
@@ -270,15 +285,27 @@ def VDI_DesktopPool_Combobox_callback(event):
     except:
         instant_clone_pending_image_state = "N/A"
     vdi_textblock_text = f"Desktop Pool Status:\nName: {pool_name}\nDisplay Name: {pool_displayname}\nDesktop Pool State = {state}\nProvisioning State = {provisioning_state}\nCurrent Image State = {current_image_state}\nInstant Clone Operation = {instant_clone_operation}\nImage Deployment time = {deployment_time}\nBase VM = {primary_basevm_name}\nBase Snapshot = {primary_basesnapshot_name}\nSecondary or Pending VM = {secondary_basevm_name}\nSecondary or Pending SNapshot = {secondary_basesnapshot_name}\nPending Image State = {instant_clone_pending_image_state}\nPending Image Progress = {provisioning_progress}"
-    VDI_Status_Textblock.delete(tk.END)
+    VDI_Status_Textblock.delete(1.0, tk.END)
     VDI_Status_Textblock.insert(tk.END, vdi_textblock_text)
-    optional_golden_images = [item for item in global_base_vms if item["vcenter_id"] == vcenter_id and "UNSUPPORTED_OS" not in item["incompatible_reasons"] ]
-    VDI_Golden_Image_Combobox_values = {item["name"]: item for item in optional_golden_images}
-    VDI_Golden_Image_Combobox__selected_default = optional_golden_images[0]['name']
-    VDI_Golden_Image_Combobox['values'] = list(VDI_Golden_Image_Combobox_values.keys())
-    VDI_Golden_Image_Combobox.config(state='readonly')
-    VDI_Golden_Image_Combobox.set(VDI_Golden_Image_Combobox__selected_default)
-    VDI_Golden_Image_Combobox.event_generate("<<ComboboxSelected>>") 
+    
+    if (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "N/A") or (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "FAILED"):
+        optional_golden_images = [item for item in global_base_vms if item["vcenter_id"] == vcenter_id and "UNSUPPORTED_OS" not in item["incompatible_reasons"] ]
+        VDI_Golden_Image_Combobox_values = {item["name"]: item for item in optional_golden_images}
+        VDI_Golden_Image_Combobox__selected_default = optional_golden_images[0]['name']
+        VDI_Golden_Image_Combobox['values'] = list(VDI_Golden_Image_Combobox_values.keys())
+        VDI_Golden_Image_Combobox.set(VDI_Golden_Image_Combobox__selected_default)
+        VDI_Cancel_Secondary_Image_button.config(state="disabled")
+        VDI_Promote_Secondary_Image_button.config(state="disabled")
+        VDI_Apply_Golden_Image_button.config(state="disabled")
+        VDI_Golden_Image_Combobox.config(state='readonly')
+        VDI_Golden_Image_Combobox.event_generate("<<ComboboxSelected>>") 
+    elif instant_clone_operation == "NONE" and instant_clone_pending_image_state == "READY_HELD":
+        VDI_Cancel_Secondary_Image_button.config(state="enabled")
+        VDI_Promote_Secondary_Image_button.config(state="enabled")
+        VDI_Apply_Golden_Image_button.config(state="enabled")
+    elif instant_clone_operation =="SCHEDULE_PUSH_IMAGE":
+        VDI_Cancel_Secondary_Image_button.config(state="enabled")
+    
 
 def VDI_Golden_Image_Combobox_callback(event):
     global global_desktop_pools, global_base_vms, VDI_Snapshot_Combobox__selected_default, global_base_snapshots,VDI_Snapshot_Combobox_values, global_vdi_selected_vm
@@ -302,6 +329,7 @@ def VDI_Golden_Image_Combobox_callback(event):
 def VDI_Snapshot_Combobox_callback(event):
     global global_VDI_selected_snapshot
     global_VDI_selected_snapshot = VDI_Snapshot_Combobox_values[VDI_Snapshot_Combobox_var.get()]
+
     VDI_LofOffPolicy_Combobox.config(state='readonly')
     VDI_Resize_checkbox.config(state="enabled")
     VDI_Enable_datetimepicker_checkbox.config(state='enabled')
@@ -716,10 +744,10 @@ VDI_Apply_Golden_Image_button.place(x=570, y=510, width=220, height=25)
 VDI_Apply_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Apply Secondary Image")
 VDI_Apply_Secondary_Image_button.place(x=570, y=456, width=220, height=25)
 
-VDI_Cancel_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Cancel secondary Image")
+VDI_Cancel_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Cancel Image Push", command=VDI_Cancel_Secondary_Image_button_callback)
 VDI_Cancel_Secondary_Image_button.place(x=570, y=430, width=220, height=25)
 
-VDI_Promote_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Promote secondary Image")
+VDI_Promote_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Promote secondary Image", command=VDI_Promote_Secondary_Image_button_callback)
 VDI_Promote_Secondary_Image_button.place(x=570, y=483, width=220, height=25)
 
 # Create Labels
@@ -799,8 +827,9 @@ VDI_Enable_datetimepicker_checkbox.place(x=570, y=250)
 ToolTip(VDI_Enable_datetimepicker_checkbox, msg="Check to enable a scheduled deployment of the new image", delay=0.1)
 
 # Create other Widgets
-VDI_Status_Textblock = tk.Text(tab1, borderwidth=1, relief="solid", wrap="word")
+VDI_Status_Textblock = tk.Text(tab1, borderwidth=1, relief="solid", wrap="word", state="normal")
 VDI_Status_Textblock.place(x=30, y=80, height=305, width=510)
+VDI_Status_Textblock.insert(tk.END, "No Info yet")
 
 VDI_Machines_ListBox = tk.Listbox(tab1, selectmode="multiple")
 VDI_Machines_ListBox.place(x=30, y=413, height=150, width=300)

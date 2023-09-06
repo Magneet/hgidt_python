@@ -460,10 +460,10 @@ class Inventory:
                 raise "Error: " + str(e)
 
     def cancel_desktop_pool_push_image(self, desktop_pool_id:str):
-        """Cancels push of new golden image.
+        """Promotes pending image.
 
         Available for Horizon 8 2012 and later."""
-        response = requests.get(f'{self.url}/rest/inventory/v1/desktop-pools/{desktop_pool_id}/action/cancel-scheduled-push-image', verify=False,  headers=self.access_token)
+        response = requests.post(f'{self.url}/rest/inventory/v1/desktop-pools/{desktop_pool_id}/action/cancel-scheduled-push-image', verify=False,  headers=self.access_token)
         if response.status_code == 400:
             error_message = (response.json())["error_message"]
             raise Exception(f"Error {response.status_code}: {error_message}")
@@ -480,6 +480,26 @@ class Inventory:
             except requests.exceptions.RequestException as e:
                 raise "Error: " + str(e)
 
+    def promote_pending_desktop_pool_image(self, desktop_pool_id:str):
+        """Cancels push of new golden image.
+
+        Available for Horizon 8 2012 and later."""
+        response = requests.post(f'{self.url}/rest/inventory/v1/desktop-pools/{desktop_pool_id}/action/promote-pending-image', verify=False,  headers=self.access_token)
+        if response.status_code == 400:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        if response.status_code == 404:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        elif response.status_code == 403:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        elif response.status_code != 204:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        else:
+            try:
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise "Error: " + str(e)
 
 class External:
     def __init__(self, url: str, access_token: dict):
