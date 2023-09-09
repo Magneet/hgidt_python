@@ -483,7 +483,7 @@ class Inventory:
     def promote_pending_desktop_pool_image(self, desktop_pool_id:str):
         """Cancels push of new golden image.
 
-        Available for Horizon 8 2012 and later."""
+        """
         response = requests.post(f'{self.url}/rest/inventory/v1/desktop-pools/{desktop_pool_id}/action/promote-pending-image', verify=False,  headers=self.access_token)
         if response.status_code == 400:
             error_message = (response.json())["error_message"]
@@ -500,6 +500,72 @@ class Inventory:
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
                 raise "Error: " + str(e)
+
+    def apply_pending_desktop_pool_image(self, desktop_pool_id:str, machine_ids:list,pending_image:bool):
+        """Cancels push of new golden image.
+
+        """
+        headers = self.access_token
+        headers["Content-Type"] = 'application/json'
+        if pending_image == True:
+            pending_image="true"
+        else:
+            pending_image="false"
+        params = {
+            'pending_image': pending_image
+        }
+        response = requests.post(f'{self.url}/rest/inventory/v1/desktop-pools/{desktop_pool_id}/action/apply-image?', verify=False,  headers=headers, json=machine_ids, params=params)
+        if response.status_code == 400:
+            error_message = (response.json())["Bad Request"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        if response.status_code == 404:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        elif response.status_code == 403:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        elif response.status_code != 200:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        else:
+            try:
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise "Error: " + str(e)
+
+    def get_machines(self, maxpagesize:int=100, filter:dict="") -> list:
+        """Lists the Machines in the environment.
+
+        For information on filtering see https://vdc-download.vmware.com/vmwb-repository/dcr-public/f92cce4b-9762-4ed0-acbd-f1d0591bd739/235dc19c-dabd-43f2-8d38-8a7a333e914e/HorizonServerRESTPaginationAndFilterGuide.doc
+        """
+
+        def int_get_machines(self, page:int, maxpagesize: int, filter:dict="") ->list:
+            if filter != "":
+                filter_url = urllib.parse.quote(json.dumps(filter,separators=(', ', ':')))
+                add_filter = f"{filter_url}"
+                response = requests.get(f'{self.url}/rest/inventory/v3/machines?filter={add_filter}&page={page}&size={maxpagesize}', verify=False, headers=self.access_token)
+            else:
+                response = requests.get(f'{self.url}/rest/inventory/v3/machines?page={page}&size={maxpagesize}', verify=False, headers=self.access_token)
+            if response.status_code == 400:
+                error_message = (response.json())["error_message"]
+                raise Exception(f"Error {response.status_code}: {error_message}")
+            elif response.status_code != 200:
+                raise Exception(f"Error {response.status_code}: {response.reason}")
+            else:
+                try:
+                    response.raise_for_status()
+                except requests.exceptions.RequestException as e:
+                    raise "Error: " + str(e)
+                else:
+                    return response
+        if maxpagesize > 1000:
+            maxpagesize = 1000
+        page = 1
+        response = int_get_machines(self,page = page, maxpagesize= maxpagesize,filter = filter)
+        results = response.json()
+        while 'HAS_MORE_RECORDS' in response.headers:
+            page += 1
+            response = int_get_machines(self,page = page, maxpagesize= maxpagesize, filter = filter)
+            results += response.json()
+        return results
 
 class External:
     def __init__(self, url: str, access_token: dict):

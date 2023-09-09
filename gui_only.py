@@ -5,7 +5,7 @@ from tkcalendar import DateEntry
 from tktimepicker import SpinTimePickerModern
 from tktimepicker import constants
 from datetime import datetime,time as dt_time 
-import configparser, os, horizon_functions, logging, sys,warnings, keyring,requests, json, threading,time
+import configparser, os, horizon_functions, logging, sys,warnings, keyring,requests, json, threading,time, math
 from logging.handlers import RotatingFileHandler
 
 application_name = "hgidt"
@@ -123,48 +123,6 @@ def build_pod_info(hvconnectionobj):
             conserver_details['ServerDNS'] = conserver_dns
             config_connection_servers.append(conserver_details)
 
-
-# def write_config(username, domain, server_name):
-#     config = configparser.ConfigParser()
-#     try:
-#         config['UserInfo'] = {'Username': username, 'Domain': domain, 'ServerName': server_name}
-#         config['Pods'] = {'Pods' : config_pods}
-#         config['Connection_Servers'] = {'Connection_Servers' : config_connection_servers}
-#         with open(CONFIG_FILE, 'w') as configfile:
-#             config.write(configfile)
-#     except:
-#         logger.error("Configuration could not be saved")
-#     try:
-#         keyring.set_password(application_name, config_username, config_password)
-#         logger.info("Password saved to credentials store")
-#     except keyring.errors.PasswordDeleteError:
-#         logger.error("Password could not be saved to the credentials store")
-    
-
-# def read_config():
-#     # Get config from file
-#     global config_username, config_password, config_server_name
-#     config = configparser.ConfigParser()
-#     config.read(CONFIG_FILE)
-#     if 'UserInfo' in config:
-#         config_username = config.get('UserInfo', 'Username')
-#         config_domain = config.get('UserInfo', 'Domain')
-#         config_server_name = config.get('UserInfo', 'ServerName')
-#         # return config_username, config_domain, config_server_name
-#         config_username_textbox.insert(tk.END, config_username)
-#         config_domain_textbox.insert(tk.END, config_domain)
-#         config_conserver_textbox.insert(tk.END, config_server_name)
-#     else:
-#         return None
-#     # Get password
-#     try:
-#         global config_password
-#         config_password = keyring.get_password(application_name, config_username)
-#         logger.info("Password retreived from credentials store")
-#     except keyring.errors.PasswordDeleteError:
-#         logger.error("Password not found or could not be retreived")
-
-
 def show_password_dialog():
     password = simpledialog.askstring("Password", "Enter your password:", show='*')
     if password is not None:
@@ -175,53 +133,78 @@ def show_password_dialog():
 #endregion
 
 #region functions for button handling of VDI tab
+def VDI_secondaryimage_checkbox_callback():
+    if VDI_secondaryimage_checkbox_var.get() == True:
+        VDI_Secondary_Machine_Options_Combobox.config(state="enabled")
+        if VDI_Secondary_Machine_Options_Combobox != VDI_Secondary_Machine_Options_Combobox_default_value:
+            VDI_machinecount_textbox.config(state="enabled")
+    else:
+        VDI_Secondary_Machine_Options_Combobox.config(state="disabled")
+        VDI_machinecount_textbox.config(state="disabled")
+
+def VDI_Secondary_Machine_Options_Combobox_callback(P):
+    if VDI_Secondary_Machine_Options_Combobox_var.get() != VDI_Secondary_Machine_Options_Combobox_default_value:
+        # print("niet default")
+        VDI_machinecount_textbox.config(state="enabled")
+    else:
+        VDI_machinecount_textbox.config(state="disabled")
+        # print("default")
+
+def VDI_Apply_Secondary_Image_button_callback():
+    global global_vdi_selected_pool, global_vdi_selected_vm, hvconnectionobj
+    if VDI_Secondary_Machine_Options_Combobox_var.get() != VDI_Secondary_Machine_Options_Combobox_default_value:
+        pod = global_vdi_selected_pool["pod"]
+        hvconnectionobj = connect_pod(pod=pod)
+        horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+        pool_id = global_vdi_selected_pool['id']
+        selected_machine_count = int(VDI_machinecount_textbox.get())
+        machinefilter = {}
+        machinefilter["type"] = "Equals"
+        machinefilter["name"] = "desktop_pool_id"
+        machinefilter["value"] = pool_id
+        machines = horizon_inventory.get_machines(filter=machinefilter)
+        machines = sorted(machines, key=lambda x: x["name"])
+        if "percent" in VDI_Secondary_Machine_Options_Combobox_var.get():
+            machinecount = len(machines)
+            selected_machine_count = math.ceil((selected_machine_count / 100) * machinecount)
+            selected_machines = [d for d in machines[:selected_machine_count]]
+            selected_machine_ids = [item["id"] for item in selected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] == global_vdi_selected_pool["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
+            unselected_machines = [d for d in machines[selected_machine_count:]]
+            unselected_machine_ids = [item["id"] for item in unselected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_vdi_selected_pool["provisioning_settings"]["base_snapshot_id"]]
+        else:
+            selected_machines = [d for d in machines[:selected_machine_count]]
+            selected_machine_ids = [item["id"] for item in selected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_vdi_selected_pool["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
+            unselected_machines = [d for d in machines[selected_machine_count:]]
+            unselected_machine_ids = [item["id"] for item in unselected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_vdi_selected_pool["provisioning_settings"]["base_snapshot_id"]]
+        if len(selected_machine_ids) !=0:
+            horizon_inventory.apply_pending_desktop_pool_image(desktop_pool_id=pool_id,machine_ids=selected_machine_ids,pending_image=True)
+        if len(unselected_machine_ids) != 0:
+            horizon_inventory.apply_pending_desktop_pool_image(desktop_pool_id=pool_id,machine_ids=unselected_machine_ids,pending_image=False)
+        VDI_Secondary_Machine_Options_Combobox.config(state="disabled")
+        VDI_machinecount_textbox.config(state="disabled")
+        VDI_Apply_Golden_Image_button.config(state="disabled")
+        VDI_Apply_Secondary_Image_button.config(state="disabled")
+        VDI_Cancel_Secondary_Image_button.config(state="disabled")
+        VDI_Enable_datetimepicker_checkbox.config(state="disabled")
+        VDI_CPUCount_ComboBox.config(state="disabled")
+        VDI_cal.config(state="disabled")
+        VDI_Golden_Image_Combobox.config(state="disabled")
+        VDI_Snapshot_Combobox.config(state="disabled")
+        VDI_vtpm_checkbox.config(state="disabled")
+        VDI_LofOffPolicy_Combobox.config(state="disabled")
+        VDI_Resize_checkbox.config(state="disabled")
+        VDI_StopOnError_checkbox.config(state="disabled")
+        VDI_secondaryimage_checkbox.config(state="disabled")
+        VDI_CoresPerSocket_ComboBox.config(state='disabled')
+        VDI_Memory_ComboBox.config(state='disabled')
+        hvconnectionobj.hv_disconnect()
+    else:
+        VDI_Statusbox_Label.config(text="Select a number of machines first.")
+
 def VDI_Cancel_Secondary_Image_button_callback():
     global global_vdi_selected_pool
-    hvconnectionobj = connect_pod(pod=global_vdi_selected_pool["pod"])
-    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-    horizon_inventory.cancel_desktop_pool_push_image(desktop_pool_id=global_vdi_selected_pool["id"])
-    hvconnectionobj.hv_disconnect()
-    
-def VDI_Promote_Secondary_Image_button_callback():    
-    global global_vdi_selected_pool
-    hvconnectionobj = connect_pod(pod=global_vdi_selected_pool["pod"])
-    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-    horizon_inventory.promote_pending_desktop_pool_image(desktop_pool_id=global_vdi_selected_pool["id"])
-    hvconnectionobj.hv_disconnect()
-
-def VDI_Apply_Golden_Image_button_callback():
-    
-    global global_vdi_selected_pool, global_vdi_selected_vm, global_vdi_selected_vm, hvconnectionobj, VDI_vtpm_checkbox_var, VDI_hour_spin, VDI_minute_spin, VDI_cal
-    if VDI_Enable_datetimepicker_checkbox_var.get() == True:
-        datetime_var= get_selected_datetime(VDI_cal,VDI_hour_spin,VDI_minute_spin)
-        start_time= datetime.timestamp(datetime_var)*1000
-    else:
-        start_time = time.time()
-    pod = global_vdi_selected_vm["pod"]
-    pool_id = global_vdi_selected_pool['id']
-    parent_vm_id = global_vdi_selected_vm['id']
-    snapshot_id = global_VDI_selected_snapshot['id']
-    VDI_Resize_checkbox_var_selected = VDI_Resize_checkbox_var.get()
-    VDI_CoresPerSocket_ComboBox_var_selected = VDI_CoresPerSocket_ComboBox_var.get()
-    VDI_CPUCount_ComboBox_var_selected = VDI_CPUCount_ComboBox_var.get()
-    VDI_Memory_ComboBox_var_selected = VDI_Memory_ComboBox_var.get()
-    
-    if VDI_Resize_checkbox_var_selected == True and VDI_CoresPerSocket_ComboBox_var_selected and VDI_CPUCount_ComboBox_var_selected and VDI_Memory_ComboBox_var_selected:
-        compute_profile_num_cores_per_socket=VDI_CoresPerSocket_ComboBox_var.get()
-        compute_profile_num_cpus = VDI_CPUCount_ComboBox_var.get()
-        compute_profile_ram_mb = VDI_Memory_ComboBox_var.get()
-    else:
-        compute_profile_num_cores_per_socket = None
-        compute_profile_num_cpus = None
-        compute_profile_ram_mb = None
-    hvconnectionobj = connect_pod(pod=pod)
-    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-    horizon_inventory.desktop_pool_push_image(desktop_pool_id=pool_id,parent_vm_id=parent_vm_id,snapshot_id=snapshot_id, compute_profile_ram_mb = compute_profile_ram_mb, compute_profile_num_cpus=compute_profile_num_cpus, compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket, add_virtual_tpm = VDI_vtpm_checkbox_var.get(), logoff_policy=VDI_LofOffPolicy_Combobox_var.get(), start_time=start_time, selective_push_image=VDI_secondaryimage_checkbox_var.get() )
-    hvconnectionobj.hv_disconnect()
-    
-
-def VDI_DesktopPool_Combobox_callback(event):
-    global global_desktop_pools, global_base_vms, VDI_Golden_Image_Combobox__selected_default,VDI_Golden_Image_Combobox_values,global_vdi_selected_pool,global_base_snapshots
+    VDI_Secondary_Machine_Options_Combobox.config(state="disabled")
+    VDI_machinecount_textbox.config(state="disabled")
     VDI_Apply_Golden_Image_button.config(state="disabled")
     VDI_Apply_Secondary_Image_button.config(state="disabled")
     VDI_Cancel_Secondary_Image_button.config(state="disabled")
@@ -233,7 +216,120 @@ def VDI_DesktopPool_Combobox_callback(event):
     VDI_vtpm_checkbox.config(state="disabled")
     VDI_LofOffPolicy_Combobox.config(state="disabled")
     VDI_Resize_checkbox.config(state="disabled")
-    
+    VDI_StopOnError_checkbox.config(state="disabled")
+    VDI_secondaryimage_checkbox.config(state="disabled")
+    VDI_CoresPerSocket_ComboBox.config(state='disabled')
+    VDI_Memory_ComboBox.config(state='disabled')
+    hvconnectionobj = connect_pod(pod=global_vdi_selected_pool["pod"])
+    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+    horizon_inventory.cancel_desktop_pool_push_image(desktop_pool_id=global_vdi_selected_pool["id"])
+    hvconnectionobj.hv_disconnect()
+
+def VDI_Promote_Secondary_Image_button_callback():
+    global global_vdi_selected_pool
+    VDI_Secondary_Machine_Options_Combobox.config(state="disabled")
+    VDI_machinecount_textbox.config(state="disabled")
+    VDI_Apply_Golden_Image_button.config(state="disabled")
+    VDI_Apply_Secondary_Image_button.config(state="disabled")
+    VDI_Cancel_Secondary_Image_button.config(state="disabled")
+    VDI_Enable_datetimepicker_checkbox.config(state="disabled")
+    VDI_CPUCount_ComboBox.config(state="disabled")
+    VDI_cal.config(state="disabled")
+    VDI_Golden_Image_Combobox.config(state="disabled")
+    VDI_Snapshot_Combobox.config(state="disabled")
+    VDI_vtpm_checkbox.config(state="disabled")
+    VDI_LofOffPolicy_Combobox.config(state="disabled")
+    VDI_Resize_checkbox.config(state="disabled")
+    VDI_StopOnError_checkbox.config(state="disabled")
+    VDI_secondaryimage_checkbox.config(state="disabled")
+    VDI_CoresPerSocket_ComboBox.config(state='disabled')
+    VDI_Memory_ComboBox.config(state='disabled')
+    hvconnectionobj = connect_pod(pod=global_vdi_selected_pool["pod"])
+    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+    horizon_inventory.promote_pending_desktop_pool_image(desktop_pool_id=global_vdi_selected_pool["id"])
+    hvconnectionobj.hv_disconnect()
+
+def VDI_Apply_Golden_Image_button_callback():
+    global global_vdi_selected_pool, global_vdi_selected_vm, global_vdi_selected_vm, hvconnectionobj, VDI_vtpm_checkbox_var, VDI_hour_spin, VDI_minute_spin, VDI_cal
+    if VDI_Enable_datetimepicker_checkbox_var.get() == True:
+        datetime_var= get_selected_datetime(VDI_cal,VDI_hour_spin,VDI_minute_spin)
+        start_time= datetime.timestamp(datetime_var)*1000
+    else:
+        start_time = time.time()
+
+    pod = global_vdi_selected_vm["pod"]
+    hvconnectionobj = connect_pod(pod=pod)
+    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+    pool_id = global_vdi_selected_pool['id']
+    parent_vm_id = global_vdi_selected_vm['id']
+    snapshot_id = global_VDI_selected_snapshot['id']
+    VDI_Resize_checkbox_var_selected = VDI_Resize_checkbox_var.get()
+    VDI_CoresPerSocket_ComboBox_var_selected = VDI_CoresPerSocket_ComboBox_var.get()
+    VDI_CPUCount_ComboBox_var_selected = VDI_CPUCount_ComboBox_var.get()
+    VDI_Memory_ComboBox_var_selected = VDI_Memory_ComboBox_var.get()
+    if VDI_Secondary_Machine_Options_Combobox_var.get() != VDI_Secondary_Machine_Options_Combobox_default_value:
+        selected_machine_count = int(VDI_machinecount_textbox.get())
+        machinefilter = {}
+        machinefilter["type"] = "Equals"
+        machinefilter["name"] = "desktop_pool_id"
+        machinefilter["value"] = pool_id
+        machines = horizon_inventory.get_machines(filter=machinefilter)
+        machines = sorted(machines, key=lambda x: x["name"])
+        if "percent" in VDI_Secondary_Machine_Options_Combobox_var.get():
+            machinecount = len(machines)
+            selected_machine_count = math.ceil((selected_machine_count / 100) * machinecount)
+            machine_ids = [d["id"] for d in machines[:selected_machine_count]]
+        else:
+            machine_ids = [d["id"] for d in machines[:selected_machine_count]]
+    else:
+        machine_ids = None
+    if VDI_Resize_checkbox_var_selected == True and VDI_CoresPerSocket_ComboBox_var_selected and VDI_CPUCount_ComboBox_var_selected and VDI_Memory_ComboBox_var_selected:
+        compute_profile_num_cores_per_socket=VDI_CoresPerSocket_ComboBox_var.get()
+        compute_profile_num_cpus = VDI_CPUCount_ComboBox_var.get()
+        compute_profile_ram_mb = VDI_Memory_ComboBox_var.get()
+    else:
+        compute_profile_num_cores_per_socket = None
+        compute_profile_num_cpus = None
+        compute_profile_ram_mb = None
+
+    horizon_inventory.desktop_pool_push_image(desktop_pool_id=pool_id,parent_vm_id=parent_vm_id,snapshot_id=snapshot_id,machine_ids=machine_ids, compute_profile_ram_mb = compute_profile_ram_mb, compute_profile_num_cpus=compute_profile_num_cpus, compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket, add_virtual_tpm = VDI_vtpm_checkbox_var.get(), logoff_policy=VDI_LofOffPolicy_Combobox_var.get(), start_time=start_time, selective_push_image=VDI_secondaryimage_checkbox_var.get() )
+    VDI_Secondary_Machine_Options_Combobox.config(state="disabled")
+    VDI_machinecount_textbox.config(state="disabled")
+    VDI_Apply_Golden_Image_button.config(state="disabled")
+    VDI_Apply_Secondary_Image_button.config(state="disabled")
+    VDI_Cancel_Secondary_Image_button.config(state="disabled")
+    VDI_Enable_datetimepicker_checkbox.config(state="disabled")
+    VDI_CPUCount_ComboBox.config(state="disabled")
+    VDI_cal.config(state="disabled")
+    VDI_Golden_Image_Combobox.config(state="disabled")
+    VDI_Snapshot_Combobox.config(state="disabled")
+    VDI_vtpm_checkbox.config(state="disabled")
+    VDI_LofOffPolicy_Combobox.config(state="disabled")
+    VDI_Resize_checkbox.config(state="disabled")
+    VDI_StopOnError_checkbox.config(state="disabled")
+    VDI_secondaryimage_checkbox.config(state="disabled")
+    VDI_CoresPerSocket_ComboBox.config(state='disabled')
+    VDI_Memory_ComboBox.config(state='disabled')
+    hvconnectionobj.hv_disconnect()
+
+def VDI_DesktopPool_Combobox_callback(event):
+    global global_desktop_pools, global_base_vms, VDI_Golden_Image_Combobox__selected_default,VDI_Golden_Image_Combobox_values,global_vdi_selected_pool,global_base_snapshots
+    VDI_Secondary_Machine_Options_Combobox.config(state="disabled")
+    VDI_machinecount_textbox.config(state="disabled")
+    VDI_Apply_Golden_Image_button.config(state="disabled")
+    VDI_Apply_Secondary_Image_button.config(state="disabled")
+    VDI_Cancel_Secondary_Image_button.config(state="disabled")
+    VDI_Enable_datetimepicker_checkbox.config(state="disabled")
+    VDI_CPUCount_ComboBox.config(state="disabled")
+    VDI_cal.config(state="disabled")
+    VDI_Golden_Image_Combobox.config(state="disabled")
+    VDI_Snapshot_Combobox.config(state="disabled")
+    VDI_vtpm_checkbox.config(state="disabled")
+    VDI_LofOffPolicy_Combobox.config(state="disabled")
+    VDI_Resize_checkbox.config(state="disabled")
+    VDI_CoresPerSocket_ComboBox.config(state='disabled')
+    VDI_CPUCount_ComboBox.config(state='disabled')
+    VDI_Memory_ComboBox.config(state='disabled')
     try:
         VDI_Golden_Image_Combobox_values.clear()
     except:
@@ -254,8 +350,6 @@ def VDI_DesktopPool_Combobox_callback(event):
     vcenter_id = global_vdi_selected_pool['vcenter_id']
     prinary_basevm_id =global_vdi_selected_pool["provisioning_settings"]["parent_vm_id"]
     primary_snapshot_id = global_vdi_selected_pool["provisioning_settings"]["base_snapshot_id"]
-    
-    
     try:
         provisioning_progress = global_vdi_selected_pool["provisioning_status_data"]["instant_clone_pending_image_progress"]
     except:
@@ -298,12 +392,17 @@ def VDI_DesktopPool_Combobox_callback(event):
         VDI_Promote_Secondary_Image_button.config(state="disabled")
         VDI_Apply_Golden_Image_button.config(state="disabled")
         VDI_Golden_Image_Combobox.config(state='readonly')
-        VDI_Golden_Image_Combobox.event_generate("<<ComboboxSelected>>") 
+        VDI_secondaryimage_checkbox_callback()
+        VDI_Enable_datetimepicker_checkbox_callback()
+        VDI_Resize_checkbox_callback()
+        VDI_Golden_Image_Combobox.event_generate("<<ComboboxSelected>>")
     elif instant_clone_operation == "NONE" and instant_clone_pending_image_state == "READY_HELD":
         VDI_Cancel_Secondary_Image_button.config(state="enabled")
         VDI_Promote_Secondary_Image_button.config(state="enabled")
-        VDI_Apply_Golden_Image_button.config(state="enabled")
-    elif instant_clone_operation =="SCHEDULE_PUSH_IMAGE":
+        VDI_Apply_Golden_Image_button.config(state="disabled")
+        VDI_Apply_Secondary_Image_button.config(state="enabled")
+        VDI_Secondary_Machine_Options_Combobox.config(state="enabled")
+    elif instant_clone_operation =="SCHEDULE_PUSH_IMAGE" and instant_clone_pending_image_state != "UNPUBLISHING" :
         VDI_Cancel_Secondary_Image_button.config(state="enabled")
     
 
@@ -347,7 +446,7 @@ def VDI_Resize_checkbox_callback():
         VDI_CoresPerSocket_ComboBox.config(state='disabled')
         VDI_CPUCount_ComboBox.config(state='disabled')
         VDI_Memory_ComboBox.config(state='disabled')
-        VDI_Enable_datetimepicker_checkbox
+        # VDI_Enable_datetimepicker_checkbox
 
 def VDI_Enable_datetimepicker_checkbox_callback():
     if VDI_Enable_datetimepicker_checkbox_var.get() == True:
@@ -495,6 +594,17 @@ def config_test_button_callback_thread():
 
 #region Various functions
 
+def validate_int_func(P):
+    # P is the proposed input
+
+    if P == "" or P.isdigit():
+        if len(P) >3:
+            return False
+        else:
+            return True
+    else:
+        return False
+
 def get_selected_datetime(cal,hours,minutes):
     date_var = cal.get_date()
     hours_var = int(hours.get())
@@ -519,9 +629,12 @@ def generic_Connect_Button_callback_thread():
         refresh_window()
         return
     else:
+        VDI_Connect_Button.config(state='disabled')
+        RDS_Connect_Button.config(state='disabled')
         VDI_DesktopPool_Combobox.config(state='disabled')
         VDI_Golden_Image_Combobox.config(state='disabled')
         VDI_Snapshot_Combobox.config(state='disabled')
+        VDI_Promote_Secondary_Image_button.config(state="disabled")
         VDI_Statusbox_Label.config(text="Connecting")
         RDS_Statusbox_Label.config(text="Connecting")
         refresh_window()
@@ -544,8 +657,6 @@ def generic_Connect_Button_callback_thread():
             VDI_DesktopPool_Combobox_values = []
             RDS_Farm_Combobox_values = []
         for pod in config_pods:
-            # thread_connect = threading.Thread(target=connect_pod(pod))
-            # thread_connect.start()
             hvconnectionobj = connect_pod(pod)
             if hvconnectionobj != False:
                 horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
@@ -645,9 +756,10 @@ def generic_Connect_Button_callback_thread():
         RDS_Farm_Combobox.config(state='readonly')
         RDS_Farm_Combobox.set(RDS_Farm_Combobox__selected_default)
         RDS_Farm_Combobox.event_generate("<<ComboboxSelected>>") 
-        
         VDI_Connect_Button.config(text="Refresh")
         RDS_Connect_Button.config(text="Refresh")
+        VDI_Connect_Button.config(state='normal')
+        RDS_Connect_Button.config(state='normal')
         VDI_Statusbox_Label.config(text="Connected")
         RDS_Statusbox_Label.config(text="Connected")
 
@@ -703,11 +815,14 @@ root.title("Horizon Golden Image Deployment Tool")
 
 # Set the custom icon/logo for the taskbar/Dock based on the platform
 root.iconbitmap(logo_image)  # Windows icon file
-
+validate_int = root.register(validate_int_func)
 
 root.geometry("1024x660")
 
 style = ttk.Style()
+style.map(
+    "TButton", foreground=[('disabled', 'black')]
+)
 # style.configure("Centered.TButton", padding=(10, 5))
 # style.configure('Custom.TFrame', background="ghost white")
 
@@ -741,7 +856,7 @@ VDI_Connect_Button.place(x=750, y=30, width=160, height=25)
 VDI_Apply_Golden_Image_button = ttk.Button(tab1, state="disabled", text="Deploy Golden Image",command=VDI_Apply_Golden_Image_button_callback)
 VDI_Apply_Golden_Image_button.place(x=570, y=510, width=220, height=25)
 
-VDI_Apply_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Apply Secondary Image")
+VDI_Apply_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Apply Secondary Image", command = VDI_Apply_Secondary_Image_button_callback)
 VDI_Apply_Secondary_Image_button.place(x=570, y=456, width=220, height=25)
 
 VDI_Cancel_Secondary_Image_button = ttk.Button(tab1, state="disabled", text="Cancel Image Push", command=VDI_Cancel_Secondary_Image_button_callback)
@@ -782,8 +897,6 @@ VDI_LofOffPolicy_Combobox.place(x=570, y=110, width=160, height=25)
 ToolTip(VDI_LofOffPolicy_Combobox, msg="Select the logoff Policy", delay=0.1)
 
 VDI_Memory_ComboBox_var = tk.StringVar()
-
-
 VDI_Memory_ComboBox = ttk.Combobox(tab1, state="disabled", values=memory_list,textvariable=VDI_Memory_ComboBox_var)
 VDI_Memory_ComboBox.place(x=570, y=160, width=160, height=25)
 ToolTip(VDI_Memory_ComboBox, msg="Select the new memory size", delay=0.1)
@@ -798,9 +911,17 @@ VDI_CoresPerSocket_ComboBox = ttk.Combobox(tab1, state="disabled", values=onetos
 VDI_CoresPerSocket_ComboBox.place(x=570, y=220, width=160, height=25)
 ToolTip(VDI_CoresPerSocket_ComboBox, msg="Select the number of cores per socket", delay=0.1)
 
+VDI_Secondary_Machine_Options_Combobox_var = tk.StringVar()
+VDI_Secondary_Machine_Options_Combobox= ttk.Combobox(tab1, state="disabled", values=["Don't deploy to machines", "First xx percent of machines", "First xx amount of machines"], textvariable=VDI_Secondary_Machine_Options_Combobox_var)
+VDI_Secondary_Machine_Options_Combobox_default_value = "Don't deploy to machines"
+VDI_Secondary_Machine_Options_Combobox.set(VDI_Secondary_Machine_Options_Combobox_default_value)
+VDI_Secondary_Machine_Options_Combobox.bind("<<ComboboxSelected>>",VDI_Secondary_Machine_Options_Combobox_callback)
+VDI_Secondary_Machine_Options_Combobox.place(x=30, y=413, height=25, width=300)
+ToolTip(VDI_Secondary_Machine_Options_Combobox, msg="Select selection type of secondary machines", delay=0.1)
+
 # Create Checkboxes
 VDI_secondaryimage_checkbox_var = tk.BooleanVar()
-VDI_secondaryimage_checkbox = ttk.Checkbutton(tab1, state="disabled", text="Push as Secondary Image", variable=VDI_secondaryimage_checkbox_var)
+VDI_secondaryimage_checkbox = ttk.Checkbutton(tab1, state="disabled", text="Push as Secondary Image", variable=VDI_secondaryimage_checkbox_var, command=VDI_secondaryimage_checkbox_callback)
 VDI_secondaryimage_checkbox.place(x=570, y=390)
 ToolTip(VDI_secondaryimage_checkbox, msg="Check to deploy the new golden image as a secondary image", delay=0.1)
 
@@ -831,8 +952,8 @@ VDI_Status_Textblock = tk.Text(tab1, borderwidth=1, relief="solid", wrap="word",
 VDI_Status_Textblock.place(x=30, y=80, height=305, width=510)
 VDI_Status_Textblock.insert(tk.END, "No Info yet")
 
-VDI_Machines_ListBox = tk.Listbox(tab1, selectmode="multiple")
-VDI_Machines_ListBox.place(x=30, y=413, height=150, width=300)
+# VDI_Machines_ListBox = tk.Listbox(tab1, selectmode="multiple")
+# VDI_Machines_ListBox.place(x=30, y=413, height=150, width=300)
 
 VDI_cal = DateEntry(tab1,bg="darkblue",fg="white", year=current_datetime.year, month=current_datetime.month, day=current_datetime.day)
 # VDI_cal = Calendar(tab1,bg="darkblue",fg="white", selectmode="day", year=current_datetime.year, month=current_datetime.month, day=current_datetime.day)
@@ -850,10 +971,9 @@ VDI_minute_label.place(x=650, y=310)
 VDI_minute_spin = tk.Spinbox(tab1, from_=0, to=59, width=2, value=current_datetime.minute, state="disabled")
 VDI_minute_spin.place(x=650, y=340)
 
-
-# VDI_TimePicker = SpinTimePickerModern(tab1)
-# VDI_TimePicker.addAll(constants.HOURS24)  # adds hours clock, minutes and period
-# VDI_TimePicker.place(x=570,y=310)
+VDI_machinecount_textbox = ttk.Entry(tab1, validate="key", validatecommand=(validate_int, "%P"), state="disabled")
+VDI_machinecount_textbox.place(x=30, y=450, height=25, width=60)
+ToolTip(VDI_machinecount_textbox, msg="ENter number or percentage of machines to apply the secondary image to", delay=0.1)
 
 #endregion
 
@@ -883,9 +1003,6 @@ RDS_Promote_Secondary_Image_button.place(x=570, y=483, width=160, height=25)
 # Create Labels
 RDS_Statusbox_Label = tk.Label(tab2, borderwidth=1, text="Status: Not Connected", justify="right")
 RDS_Statusbox_Label.place(x=430, y=537)
-
-# RDS_timepicker_label = tk.Label(tab2, borderwidth=1, text=":", justify="right")
-# RDS_timepicker_label.place(x=615, y=310)
 
 # Create ComboBoxes
 RDS_Farm_Combobox = ttk.Combobox(tab2, state="disabled")
