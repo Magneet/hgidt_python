@@ -19,7 +19,7 @@ log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 log_handler.setFormatter(log_formatter)
 logger = logging.getLogger(application_name)
 logger.addHandler(log_handler)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 # Custom exception handler
@@ -383,7 +383,7 @@ def VDI_DesktopPool_Combobox_callback(event):
     VDI_Status_Textblock.insert(tk.END, vdi_textblock_text)
     
     if (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "N/A") or (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "FAILED"):
-        optional_golden_images = [item for item in global_base_vms if item["vcenter_id"] == vcenter_id and "UNSUPPORTED_OS" not in item["incompatible_reasons"] ]
+        optional_golden_images = [item for item in global_base_vms if item["vcenter_id"] == vcenter_id and "UNSUPPORTED_OS" not in item["incompatible_reasons"]  not in item["incompatible_reasons"] and "VIEW_COMPOSER_REPLICA" not in item["incompatible_reasons"] and "IN_USE_BY_INSTANT_CLONE_DESKTOP_POOL" not in item["incompatible_reasons"] and "INSTANT_INTERNAL" not in item["incompatible_reasons"]]
         VDI_Golden_Image_Combobox_values = {item["name"]: item for item in optional_golden_images}
         VDI_Golden_Image_Combobox__selected_default = optional_golden_images[0]['name']
         VDI_Golden_Image_Combobox['values'] = list(VDI_Golden_Image_Combobox_values.keys())
@@ -458,6 +458,329 @@ def VDI_Enable_datetimepicker_checkbox_callback():
         VDI_minute_spin.config(state='disabled')
         VDI_hour_spin.config(state='disabled')
 #endregion
+
+
+#region functions for button handling of RDS tab
+def RDS_secondaryimage_checkbox_callback():
+    if RDS_secondaryimage_checkbox_var.get() == True:
+        RDS_Secondary_Machine_Options_Combobox.config(state="enabled")
+        if RDS_Secondary_Machine_Options_Combobox != RDS_Secondary_Machine_Options_Combobox_default_value:
+            RDS_machinecount_textbox.config(state="enabled")
+    else:
+        RDS_Secondary_Machine_Options_Combobox.config(state="disabled")
+        RDS_machinecount_textbox.config(state="disabled")
+
+def RDS_Secondary_Machine_Options_Combobox_callback(P):
+    if RDS_Secondary_Machine_Options_Combobox_var.get() != RDS_Secondary_Machine_Options_Combobox_default_value:
+        # print("niet default")
+        RDS_machinecount_textbox.config(state="enabled")
+    else:
+        RDS_machinecount_textbox.config(state="disabled")
+        # print("default")
+
+def RDS_Apply_Secondary_Image_button_callback():
+    global global_RDS_selected_farm, global_RDS_selected_vm, hvconnectionobj
+    if RDS_Secondary_Machine_Options_Combobox_var.get() != RDS_Secondary_Machine_Options_Combobox_default_value:
+        pod = global_RDS_selected_farm["pod"]
+        hvconnectionobj = connect_pod(pod=pod)
+        horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+        pool_id = global_RDS_selected_farm['id']
+        selected_machine_count = int(RDS_machinecount_textbox.get())
+        machinefilter = {}
+        machinefilter["type"] = "Equals"
+        machinefilter["name"] = "rds_farm_id"
+        machinefilter["value"] = pool_id
+        machines = horizon_inventory.get_machines(filter=machinefilter)
+        machines = sorted(machines, key=lambda x: x["name"])
+        if "percent" in RDS_Secondary_Machine_Options_Combobox_var.get():
+            machinecount = len(machines)
+            selected_machine_count = math.ceil((selected_machine_count / 100) * machinecount)
+            selected_machines = [d for d in machines[:selected_machine_count]]
+            selected_machine_ids = [item["id"] for item in selected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] == global_RDS_selected_farm["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
+            unselected_machines = [d for d in machines[selected_machine_count:]]
+            unselected_machine_ids = [item["id"] for item in unselected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_RDS_selected_farm["provisioning_settings"]["base_snapshot_id"]]
+        else:
+            selected_machines = [d for d in machines[:selected_machine_count]]
+            selected_machine_ids = [item["id"] for item in selected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_RDS_selected_farm["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
+            unselected_machines = [d for d in machines[selected_machine_count:]]
+            unselected_machine_ids = [item["id"] for item in unselected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_RDS_selected_farm["provisioning_settings"]["base_snapshot_id"]]
+        if len(selected_machine_ids) !=0:
+            horizon_inventory.apply_pending_rds_farm_image(rds_farm_id=pool_id,machine_ids=selected_machine_ids,pending_image=True)
+        if len(unselected_machine_ids) != 0:
+            horizon_inventory.apply_pending_rds_farm_image(rds_farm_id=pool_id,machine_ids=unselected_machine_ids,pending_image=False)
+        RDS_Secondary_Machine_Options_Combobox.config(state="disabled")
+        RDS_machinecount_textbox.config(state="disabled")
+        RDS_Apply_Golden_Image_button.config(state="disabled")
+        RDS_Apply_Secondary_Image_button.config(state="disabled")
+        RDS_Cancel_Secondary_Image_button.config(state="disabled")
+        RDS_Enable_datetimepicker_checkbox.config(state="disabled")
+        RDS_CPUCount_ComboBox.config(state="disabled")
+        RDS_cal.config(state="disabled")
+        RDS_Golden_Image_Combobox.config(state="disabled")
+        RDS_Snapshot_Combobox.config(state="disabled")
+        RDS_LofOffPolicy_Combobox.config(state="disabled")
+        RDS_Resize_checkbox.config(state="disabled")
+        RDS_StopOnError_checkbox.config(state="disabled")
+        RDS_secondaryimage_checkbox.config(state="disabled")
+        RDS_CoresPerSocket_ComboBox.config(state='disabled')
+        RDS_Memory_ComboBox.config(state='disabled')
+        hvconnectionobj.hv_disconnect()
+    else:
+        RDS_Statusbox_Label.config(text="Select a number of machines first.")
+
+def RDS_Cancel_Secondary_Image_button_callback():
+    global global_RDS_selected_farm
+    RDS_Secondary_Machine_Options_Combobox.config(state="disabled")
+    RDS_machinecount_textbox.config(state="disabled")
+    RDS_Apply_Golden_Image_button.config(state="disabled")
+    RDS_Apply_Secondary_Image_button.config(state="disabled")
+    RDS_Cancel_Secondary_Image_button.config(state="disabled")
+    RDS_Enable_datetimepicker_checkbox.config(state="disabled")
+    RDS_CPUCount_ComboBox.config(state="disabled")
+    RDS_cal.config(state="disabled")
+    RDS_Golden_Image_Combobox.config(state="disabled")
+    RDS_Snapshot_Combobox.config(state="disabled")
+    RDS_LofOffPolicy_Combobox.config(state="disabled")
+    RDS_Resize_checkbox.config(state="disabled")
+    RDS_StopOnError_checkbox.config(state="disabled")
+    RDS_secondaryimage_checkbox.config(state="disabled")
+    RDS_CoresPerSocket_ComboBox.config(state='disabled')
+    RDS_Memory_ComboBox.config(state='disabled')
+    hvconnectionobj = connect_pod(pod=global_RDS_selected_farm["pod"])
+    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+    horizon_inventory.cancel_rds_farm_push_image(rds_farm_id=global_RDS_selected_farm["id"])
+    hvconnectionobj.hv_disconnect()
+
+def RDS_Promote_Secondary_Image_button_callback():
+    global global_RDS_selected_farm
+    RDS_Secondary_Machine_Options_Combobox.config(state="disabled")
+    RDS_machinecount_textbox.config(state="disabled")
+    RDS_Apply_Golden_Image_button.config(state="disabled")
+    RDS_Apply_Secondary_Image_button.config(state="disabled")
+    RDS_Cancel_Secondary_Image_button.config(state="disabled")
+    RDS_Enable_datetimepicker_checkbox.config(state="disabled")
+    RDS_CPUCount_ComboBox.config(state="disabled")
+    RDS_cal.config(state="disabled")
+    RDS_Golden_Image_Combobox.config(state="disabled")
+    RDS_Snapshot_Combobox.config(state="disabled")
+    RDS_LofOffPolicy_Combobox.config(state="disabled")
+    RDS_Resize_checkbox.config(state="disabled")
+    RDS_StopOnError_checkbox.config(state="disabled")
+    RDS_secondaryimage_checkbox.config(state="disabled")
+    RDS_CoresPerSocket_ComboBox.config(state='disabled')
+    RDS_Memory_ComboBox.config(state='disabled')
+    hvconnectionobj = connect_pod(pod=global_RDS_selected_farm["pod"])
+    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+    horizon_inventory.promote_pending_rds_farm_image(rds_farm_id=global_RDS_selected_farm["id"])
+    hvconnectionobj.hv_disconnect()
+
+def RDS_Apply_Golden_Image_button_callback():
+    global global_RDS_selected_farm, global_RDS_selected_vm, global_RDS_selected_vm, hvconnectionobj, RDS_hour_spin, RDS_minute_spin, RDS_cal
+    if RDS_Enable_datetimepicker_checkbox_var.get() == True:
+        datetime_var= get_selected_datetime(RDS_cal,RDS_hour_spin,RDS_minute_spin)
+        start_time= datetime.timestamp(datetime_var)*1000
+    else:
+        start_time = time.time()
+
+    pod = global_RDS_selected_vm["pod"]
+    hvconnectionobj = connect_pod(pod=pod)
+    horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
+    pool_id = global_RDS_selected_farm['id']
+    parent_vm_id = global_RDS_selected_vm['id']
+    snapshot_id = global_RDS_selected_snapshot['id']
+    RDS_Resize_checkbox_var_selected = RDS_Resize_checkbox_var.get()
+    RDS_CoresPerSocket_ComboBox_var_selected = RDS_CoresPerSocket_ComboBox_var.get()
+    RDS_CPUCount_ComboBox_var_selected = RDS_CPUCount_ComboBox_var.get()
+    RDS_Memory_ComboBox_var_selected = RDS_Memory_ComboBox_var.get()
+    if RDS_Secondary_Machine_Options_Combobox_var.get() != RDS_Secondary_Machine_Options_Combobox_default_value:
+        selected_machine_count = int(RDS_machinecount_textbox.get())
+        machinefilter = {}
+        machinefilter["type"] = "Equals"
+        machinefilter["name"] = "rds_farm_id"
+        machinefilter["value"] = pool_id
+        machines = horizon_inventory.get_machines(filter=machinefilter)
+        machines = sorted(machines, key=lambda x: x["name"])
+        if "percent" in RDS_Secondary_Machine_Options_Combobox_var.get():
+            machinecount = len(machines)
+            selected_machine_count = math.ceil((selected_machine_count / 100) * machinecount)
+            machine_ids = [d["id"] for d in machines[:selected_machine_count]]
+        else:
+            machine_ids = [d["id"] for d in machines[:selected_machine_count]]
+    else:
+        machine_ids = None
+    if RDS_Resize_checkbox_var_selected == True and RDS_CoresPerSocket_ComboBox_var_selected and RDS_CPUCount_ComboBox_var_selected and RDS_Memory_ComboBox_var_selected:
+        compute_profile_num_cores_per_socket=RDS_CoresPerSocket_ComboBox_var.get()
+        compute_profile_num_cpus = RDS_CPUCount_ComboBox_var.get()
+        compute_profile_ram_mb = RDS_Memory_ComboBox_var.get()
+    else:
+        compute_profile_num_cores_per_socket = None
+        compute_profile_num_cpus = None
+        compute_profile_ram_mb = None
+
+    horizon_inventory.rds_farm_push_image(rds_farm_id=pool_id,parent_vm_id=parent_vm_id,snapshot_id=snapshot_id,machine_ids=machine_ids, compute_profile_ram_mb = compute_profile_ram_mb, compute_profile_num_cpus=compute_profile_num_cpus, compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket, logoff_policy=RDS_LofOffPolicy_Combobox_var.get(), start_time=start_time, selective_push_image=RDS_secondaryimage_checkbox_var.get() )
+    RDS_Secondary_Machine_Options_Combobox.config(state="disabled")
+    RDS_machinecount_textbox.config(state="disabled")
+    RDS_Apply_Golden_Image_button.config(state="disabled")
+    RDS_Apply_Secondary_Image_button.config(state="disabled")
+    RDS_Cancel_Secondary_Image_button.config(state="disabled")
+    RDS_Enable_datetimepicker_checkbox.config(state="disabled")
+    RDS_CPUCount_ComboBox.config(state="disabled")
+    RDS_cal.config(state="disabled")
+    RDS_Golden_Image_Combobox.config(state="disabled")
+    RDS_Snapshot_Combobox.config(state="disabled")
+    RDS_LofOffPolicy_Combobox.config(state="disabled")
+    RDS_Resize_checkbox.config(state="disabled")
+    RDS_StopOnError_checkbox.config(state="disabled")
+    RDS_secondaryimage_checkbox.config(state="disabled")
+    RDS_CoresPerSocket_ComboBox.config(state='disabled')
+    RDS_Memory_ComboBox.config(state='disabled')
+    hvconnectionobj.hv_disconnect()
+
+def RDS_Farm_Combobox_callback(event):
+    global global_rds_farms, global_base_vms, RDS_Golden_Image_Combobox__selected_default,RDS_Golden_Image_Combobox_values,global_RDS_selected_farm,global_base_snapshots
+    RDS_Secondary_Machine_Options_Combobox.config(state="disabled")
+    RDS_machinecount_textbox.config(state="disabled")
+    RDS_Apply_Golden_Image_button.config(state="disabled")
+    RDS_Apply_Secondary_Image_button.config(state="disabled")
+    RDS_Cancel_Secondary_Image_button.config(state="disabled")
+    RDS_Enable_datetimepicker_checkbox.config(state="disabled")
+    RDS_CPUCount_ComboBox.config(state="disabled")
+    RDS_cal.config(state="disabled")
+    RDS_Golden_Image_Combobox.config(state="disabled")
+    RDS_Snapshot_Combobox.config(state="disabled")
+    RDS_LofOffPolicy_Combobox.config(state="disabled")
+    RDS_Resize_checkbox.config(state="disabled")
+    RDS_CoresPerSocket_ComboBox.config(state='disabled')
+    RDS_CPUCount_ComboBox.config(state='disabled')
+    RDS_Memory_ComboBox.config(state='disabled')
+    try:
+        RDS_Golden_Image_Combobox_values.clear()
+    except:
+        RDS_Golden_Image_Combobox_values = []
+    global_RDS_selected_farm = RDS_Farm_Combobox_values[RDS_Farm_Combobox_var.get()]
+    # print(global_RDS_selected_farm)
+    pool_name = global_RDS_selected_farm["name"]
+    pool_displayname = global_RDS_selected_farm["display_name"]
+    podname = global_RDS_selected_farm['pod']
+    if global_RDS_selected_farm["enabled"] == True:
+        state = "Enabled"
+    else:
+        state = "Disabled"
+    if global_RDS_selected_farm["automated_farm_settings"]["enable_provisioning"] == True:
+        provisioning_state = "Enabled"
+    else:
+        provisioning_state = "Disabled"
+    vcenter_id = global_RDS_selected_farm["automated_farm_settings"]['vcenter_id']
+    prinary_basevm_id =global_RDS_selected_farm["automated_farm_settings"]["provisioning_settings"]["parent_vm_id"]
+    primary_snapshot_id = global_RDS_selected_farm["automated_farm_settings"]["provisioning_settings"]["base_snapshot_id"]
+
+    try:
+        provisioning_progress = global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_pending_image_progress"]
+    except:
+        provisioning_progress = "N/A"
+    try:
+        deployment_time = datetime.fromtimestamp(global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_push_image_settings"]["start_time"] / 1000)
+    except:
+        deployment_time = "N/A"
+    primary_basevm_name = [item for item in global_base_vms if item["id"] == prinary_basevm_id][0]["name"]
+    primary_basesnapshot_name = [item for item in global_base_snapshots if item["id"] == primary_snapshot_id][0]["name"]
+    try:
+        secondary_basevm_id =global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_pending_image_parent_vm_id"]
+        secondary_basevm_name = [item for item in global_base_vms if item["id"] == secondary_basevm_id][0]["name"]
+    except:
+        secondary_basevm_name = "N/A"
+    try:
+        secondary_snapshot_id = global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]
+        secondary_basesnapshot_name = [item for item in global_base_snapshots if item["id"] == secondary_snapshot_id][0]["name"]
+    except:
+        secondary_basesnapshot_name = "N/A"
+    pool_id = global_RDS_selected_farm["id"]
+    current_image_state = global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_current_image_state"]
+    instant_clone_operation = global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_operation"]
+    try:
+        instant_clone_pending_image_state = global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_pending_image_state"]
+    except:
+        instant_clone_pending_image_state = "N/A"
+    RDS_textblock_text = f"Desktop Pool Status:\nName: {pool_name}\nDisplay Name: {pool_displayname}\nDesktop Pool State = {state}\nProvisioning State = {provisioning_state}\nCurrent Image State = {current_image_state}\nInstant Clone Operation = {instant_clone_operation}\nImage Deployment time = {deployment_time}\nBase VM = {primary_basevm_name}\nBase Snapshot = {primary_basesnapshot_name}\nSecondary or Pending VM = {secondary_basevm_name}\nSecondary or Pending SNapshot = {secondary_basesnapshot_name}\nPending Image State = {instant_clone_pending_image_state}\nPending Image Progress = {provisioning_progress}"
+    RDS_Status_Textblock.delete(1.0, tk.END)
+    RDS_Status_Textblock.insert(tk.END, RDS_textblock_text)
+    
+    if (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "N/A") or (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "FAILED"):
+        optional_golden_images = [item for item in global_base_vms if item["vcenter_id"] == vcenter_id and "UNSUPPORTED_OS_FOR_FARM" not in item["incompatible_reasons"] and "VIEW_COMPOSER_REPLICA" not in item["incompatible_reasons"] and "IN_USE_BY_INSTANT_CLONE_DESKTOP_POOL" not in item["incompatible_reasons"] and "INSTANT_INTERNAL" not in item["incompatible_reasons"]]
+        RDS_Golden_Image_Combobox_values = {item["name"]: item for item in optional_golden_images}
+        RDS_Golden_Image_Combobox__selected_default = optional_golden_images[0]['name']
+        RDS_Golden_Image_Combobox['values'] = list(RDS_Golden_Image_Combobox_values.keys())
+        RDS_Golden_Image_Combobox.set(RDS_Golden_Image_Combobox__selected_default)
+        RDS_Cancel_Secondary_Image_button.config(state="disabled")
+        RDS_Promote_Secondary_Image_button.config(state="disabled")
+        RDS_Apply_Golden_Image_button.config(state="disabled")
+        RDS_Golden_Image_Combobox.config(state='readonly')
+        RDS_secondaryimage_checkbox_callback()
+        RDS_Enable_datetimepicker_checkbox_callback()
+        RDS_Resize_checkbox_callback()
+        RDS_Golden_Image_Combobox.event_generate("<<ComboboxSelected>>")
+    elif instant_clone_operation == "NONE" and instant_clone_pending_image_state == "READY_HELD":
+        RDS_Cancel_Secondary_Image_button.config(state="enabled")
+        RDS_Promote_Secondary_Image_button.config(state="enabled")
+        RDS_Apply_Golden_Image_button.config(state="disabled")
+        RDS_Apply_Secondary_Image_button.config(state="enabled")
+        RDS_Secondary_Machine_Options_Combobox.config(state="enabled")
+    elif instant_clone_operation =="SCHEDULE_PUSH_IMAGE" and instant_clone_pending_image_state != "UNPUBLISHING" :
+        RDS_Cancel_Secondary_Image_button.config(state="enabled")
+    
+
+def RDS_Golden_Image_Combobox_callback(event):
+    global global_rds_farms, global_base_vms, RDS_Snapshot_Combobox__selected_default, global_base_snapshots,RDS_Snapshot_Combobox_values, global_RDS_selected_vm
+    try:
+        RDS_Snapshot_Combobox_values.clear()
+    except:
+        RDS_Snapshot_Combobox_values = []
+    global_RDS_selected_vm = RDS_Golden_Image_Combobox_values[RDS_Golden_Image_Combobox_var.get()]
+
+    podname = global_RDS_selected_vm['pod']
+    vcenter_id = global_RDS_selected_vm['vcenter_id']
+    basevm_id = global_RDS_selected_vm['id']
+    optional_snapshots = [item for item in global_base_snapshots if item["vcenter_id"] == vcenter_id and item["basevmid"] == basevm_id]
+    RDS_Snapshot_Combobox_values = {item["name"]: item for item in optional_snapshots}
+    RDS_Snapshot_Combobox__selected_default = optional_snapshots[0]['name']
+    RDS_Snapshot_Combobox['values'] = list(RDS_Snapshot_Combobox_values.keys())
+    RDS_Snapshot_Combobox.config(state='readonly')
+    RDS_Snapshot_Combobox.set(RDS_Snapshot_Combobox__selected_default)
+    RDS_Snapshot_Combobox.event_generate("<<ComboboxSelected>>") 
+
+def RDS_Snapshot_Combobox_callback(event):
+    global global_RDS_selected_snapshot
+    global_RDS_selected_snapshot = RDS_Snapshot_Combobox_values[RDS_Snapshot_Combobox_var.get()]
+
+    RDS_LofOffPolicy_Combobox.config(state='readonly')
+    RDS_Resize_checkbox.config(state="enabled")
+    RDS_Enable_datetimepicker_checkbox.config(state='enabled')
+    RDS_secondaryimage_checkbox.config(state='enabled')
+    RDS_StopOnError_checkbox.config(state='enabled')
+    RDS_Apply_Golden_Image_button.config(state='enabled')
+
+def RDS_Resize_checkbox_callback():
+    if RDS_Resize_checkbox_var.get() == True:
+        RDS_CoresPerSocket_ComboBox.config(state='readonly')
+        RDS_CPUCount_ComboBox.config(state='readonly')
+        RDS_Memory_ComboBox.config(state='readonly')
+    else:
+        RDS_CoresPerSocket_ComboBox.config(state='disabled')
+        RDS_CPUCount_ComboBox.config(state='disabled')
+        RDS_Memory_ComboBox.config(state='disabled')
+        # RDS_Enable_datetimepicker_checkbox
+
+def RDS_Enable_datetimepicker_checkbox_callback():
+    if RDS_Enable_datetimepicker_checkbox_var.get() == True:
+        RDS_cal.config(state='readonly')
+        RDS_minute_spin.config(state='normal')
+        RDS_hour_spin.config(state='normal')
+    else:
+        RDS_cal.config(state='disabled')
+        RDS_minute_spin.config(state='disabled')
+        RDS_hour_spin.config(state='disabled')
+#endregion
+
 
 #region functions for button handling of configuration tab
 
@@ -619,11 +942,13 @@ def generic_Connect_Button_callback():
 def generic_Connect_Button_callback_thread():
     global hvconnectionobj, global_desktop_pools, global_rds_farms, global_base_vms, global_base_snapshots, global_datacenters, global_vcenters,VDI_DesktopPool_Combobox_values,RDS_Farm_Combobox_values,config_password
     if config_server_name is None and config_password is None:
+        logger.info("No Connection server and password found in config")
         VDI_Statusbox_Label.config(text="Please configure the connection details first on the Configuration tab")
         RDS_Statusbox_Label.config(text="Please configure the connection details first on the Configuration tab")
         refresh_window()
         return
     elif config_server_name is not None and config_password is None:
+        logger.info("No password found in config")
         VDI_Statusbox_Label.config(text="Please configure the password first on the Configuration tab")
         RDS_Statusbox_Label.config(text="Please configure the password first on the Configuration tab")
         refresh_window()
@@ -657,6 +982,7 @@ def generic_Connect_Button_callback_thread():
             VDI_DesktopPool_Combobox_values = []
             RDS_Farm_Combobox_values = []
         for pod in config_pods:
+            logger.info(f'Connecting to Pod: {pod}')
             hvconnectionobj = connect_pod(pod)
             if hvconnectionobj != False:
                 horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
@@ -679,40 +1005,59 @@ def generic_Connect_Button_callback_thread():
                 rds_filter["type"] = "Equals"
                 rds_filter["name"] = "automated_farm_settings.image_source"
                 rds_filter["value"] = "VIRTUAL_CENTER"
+                logger.info(f'Getting Desktop Pools with filter {vdi_filter}')
                 desktop_pools=horizon_inventory.get_desktop_pools(filter=vdi_filter)
                 for pool in desktop_pools:
                     pool['pod'] = pod
+                    logger.info(f'Found Pool: {pool["name"]}')
                 global_desktop_pools+=desktop_pools
-
+                logger.info(f'Getting RDS Farms with filter {rds_filter}')
                 rds_farms=horizon_inventory.get_farms(filter=rds_filter)
                 for farm in rds_farms:
                     farm['pod'] = pod
+                    logger.info(f'Found: {farm["name"]}')
                 global_rds_farms+=rds_farms
-
+                logger.info("Getting vCenters")
                 vcenters = horizon_config.get_virtual_centers()
                 for vcenter in vcenters:
                     vcenter['pod'] = pod
+                    logger.info(f'Found vCenter: {vcenter["server_name"]}')
+                    logger.info("Getting datacenters")
                     datacenters = horizon_External.get_datacenters(vcenter_id=vcenter['id'])
                     for datacenter in datacenters:
                         datacenter['pod'] = pod
-                        basevms = horizon_External.get_base_vms(vcenter_id=vcenter['id'], datacenter_id=datacenter['id'],filter_incompatible_vms=True)
+                        logger.info(f'Found Datacenter {datacenter["name"]}')
+                        logger.info("Getting Base VMs")
+                        basevms = horizon_External.get_base_vms(vcenter_id=vcenter['id'], datacenter_id=datacenter['id'],filter_incompatible_vms=False)
+
+                        for i in basevms:
+                            logger.info(f'Found Base VM: {i["name"]}')
                         if isinstance(basevms, list):
                             basevms = basevms
                         else:
                             basevms = [basevms]
                         for basevm in basevms:
                             basevm['pod'] = pod
+                            logger.info(f'Getting Base Snapshots for {basevm["name"]}')
                             basesnapshots = horizon_External.get_base_snapshots(vcenter_id=vcenter['id'],base_vm_id=basevm['id'])
+                            if len(basesnapshots) is not None:
+                                basevm["snapshotcount"] = len(basesnapshots)
+                            else:
+                                basevm["snapshotcount"] = 0
+                            for i in basesnapshots:
+                                logger.info(f'Found Base snapshot: {i["name"]} on {basevm["name"]}')
                             if isinstance(basesnapshots, list):
                                 basesnapshots = basesnapshots
                             else:
                                 basesnapshots = [basesnapshots]
                             if len(basesnapshots) < 1:
-                                basevms.remove(basevm)
+                                logger.info(f'No Snapshots found for: {basevm["name"]}')
+                                # basevms.remove(basevm)
                             else:
                                 for basesnapshot in basesnapshots:
                                     basesnapshot['basevmid'] = basevm['id']
                                 global_base_snapshots+=basesnapshots
+                        basevms = [item for item in basevms if item["snapshotcount"] >= 1]
                         global_base_vms+=basevms
                     global_datacenters+=datacenter
                 global_vcenters+=vcenters
@@ -741,8 +1086,7 @@ def generic_Connect_Button_callback_thread():
                 farm['name'] = new_name
             else:
                 rds_name_dict_mapping.append(name)
-            # print(name_dict_mapping)
-            # print(pool['name'])
+
         VDI_DesktopPool_Combobox_values = {item["name"]: item for item in global_desktop_pools}
         VDI_DesktopPool_Combobox__selected_default = global_desktop_pools[0]['name']
         VDI_DesktopPool_Combobox['values'] = list(VDI_DesktopPool_Combobox_values.keys())
@@ -985,90 +1329,122 @@ tab_control.add(tab2, text="RDS Farms")
 
 # Place your Tab 2 widgets here
 # create buttons
+
 RDS_Connect_Button = ttk.Button(tab2, text="Connect", command=generic_Connect_Button_callback)
-RDS_Connect_Button.place(x=570, y=30, width=160, height=25)
+RDS_Connect_Button.place(x=750, y=30, width=160, height=25)
 
-RDS_Apply_Golden_Image_button = ttk.Button(tab2, text="Deploy Golden Image")
-RDS_Apply_Golden_Image_button.place(x=570, y=510, width=160, height=25)
 
-RDS_Apply_Secondary_Image_button = ttk.Button(tab2, text="Apply Secondary Image")
-RDS_Apply_Secondary_Image_button.place(x=570, y=456, width=160, height=25)
+RDS_Apply_Golden_Image_button = ttk.Button(tab2, state="disabled", text="Deploy Golden Image",command=RDS_Apply_Golden_Image_button_callback)
+RDS_Apply_Golden_Image_button.place(x=570, y=510, width=220, height=25)
 
-RDS_Cancel_Secondary_Image_button = ttk.Button(tab2, text="Cancel secondary Image")
-RDS_Cancel_Secondary_Image_button.place(x=570, y=430, width=160, height=25)
+RDS_Apply_Secondary_Image_button = ttk.Button(tab2, state="disabled", text="Apply Secondary Image", command = RDS_Apply_Secondary_Image_button_callback)
+RDS_Apply_Secondary_Image_button.place(x=570, y=456, width=220, height=25)
 
-RDS_Promote_Secondary_Image_button = ttk.Button(tab2, text="Promote secondary Image")
-RDS_Promote_Secondary_Image_button.place(x=570, y=483, width=160, height=25)
+RDS_Cancel_Secondary_Image_button = ttk.Button(tab2, state="disabled", text="Cancel Image Push", command=RDS_Cancel_Secondary_Image_button_callback)
+RDS_Cancel_Secondary_Image_button.place(x=570, y=430, width=220, height=25)
+
+RDS_Promote_Secondary_Image_button = ttk.Button(tab2, state="disabled", text="Promote secondary Image", command=RDS_Promote_Secondary_Image_button_callback)
+RDS_Promote_Secondary_Image_button.place(x=570, y=483, width=220, height=25)
 
 # Create Labels
 RDS_Statusbox_Label = tk.Label(tab2, borderwidth=1, text="Status: Not Connected", justify="right")
 RDS_Statusbox_Label.place(x=430, y=537)
 
+
 # Create ComboBoxes
-RDS_Farm_Combobox = ttk.Combobox(tab2, state="disabled")
-RDS_Farm_Combobox.place(x=30, y=30, width=150, height=25)
-ToolTip(RDS_Farm_Combobox, msg="Select the desktop pool to update")
+RDS_Farm_Combobox_var = tk.StringVar()
+RDS_Farm_Combobox = ttk.Combobox(tab2, state="disabled", textvariable=RDS_Farm_Combobox_var)
+RDS_Farm_Combobox.place(x=30, y=30, width=220, height=25)
+RDS_Farm_Combobox.bind("<<ComboboxSelected>>",RDS_Farm_Combobox_callback)
+ToolTip(RDS_Farm_Combobox, msg="Select the Rds Farm to update", delay=0.1)
 
-RDS_Golden_Image_Combobox = ttk.Combobox(tab2, state="disabled")
-RDS_Golden_Image_Combobox.place(x=210, y=30, width=150, height=25)
-ToolTip(RDS_Golden_Image_Combobox, msg="Select the new source VM")
+RDS_Golden_Image_Combobox_var = tk.StringVar()
+RDS_Golden_Image_Combobox = ttk.Combobox(tab2, state="disabled", textvariable=RDS_Golden_Image_Combobox_var)
+RDS_Golden_Image_Combobox.place(x=270, y=30, width=220, height=25)
+RDS_Golden_Image_Combobox.bind("<<ComboboxSelected>>",RDS_Golden_Image_Combobox_callback)
+ToolTip(RDS_Golden_Image_Combobox, msg="Select the new source VM", delay=0.1)
 
-RDS_Snapshot_Combobox = ttk.Combobox(tab2, state="disabled")
-RDS_Snapshot_Combobox.place(x=390, y=30, width=150, height=25)
-ToolTip(RDS_Snapshot_Combobox, msg="Select the new source Snapshot")
+RDS_Snapshot_Combobox_var = tk.StringVar()
+RDS_Snapshot_Combobox = ttk.Combobox(tab2, state="disabled", textvariable=RDS_Snapshot_Combobox_var)
+RDS_Snapshot_Combobox.place(x=510, y=30, width=220, height=25)
+RDS_Snapshot_Combobox.bind("<<ComboboxSelected>>",RDS_Snapshot_Combobox_callback)
+ToolTip(RDS_Snapshot_Combobox, msg="Select the new source Snapshot", delay=0.1)
 
-RDS_LofOffPolicy_Combobox = ttk.Combobox(tab2, state="disabled")
+RDS_LofOffPolicy_Combobox_var = tk.StringVar()
+RDS_LofOffPolicy_Combobox = ttk.Combobox(tab2, state="disabled", values=["FORCE_LOGOFF","WAIT_FOR_LOGOFF"], textvariable=RDS_LofOffPolicy_Combobox_var)
+RDS_LofOffPolicy_Combobox_default_value = "WAIT_FOR_LOGOFF"
+RDS_LofOffPolicy_Combobox.set(RDS_LofOffPolicy_Combobox_default_value)
 RDS_LofOffPolicy_Combobox.place(x=570, y=110, width=160, height=25)
-ToolTip(RDS_LofOffPolicy_Combobox, msg="Select the logoff Policy")
+ToolTip(RDS_LofOffPolicy_Combobox, msg="Select the logoff Policy", delay=0.1)
 
-RDS_Memory_ComboBox = ttk.Combobox(tab2 , state="disabled")
+RDS_Memory_ComboBox_var = tk.StringVar()
+RDS_Memory_ComboBox = ttk.Combobox(tab2, state="disabled", values=memory_list,textvariable=RDS_Memory_ComboBox_var)
 RDS_Memory_ComboBox.place(x=570, y=160, width=160, height=25)
-ToolTip(RDS_Memory_ComboBox, msg="Select the new memory size")
+ToolTip(RDS_Memory_ComboBox, msg="Select the new memory size", delay=0.1)
 
-RDS_CPUCount_ComboBox = ttk.Combobox(tab2, state="disabled")
+RDS_CPUCount_ComboBox_var = tk.StringVar()
+RDS_CPUCount_ComboBox = ttk.Combobox(tab2, state="disabled", values=onetosixtyfour, textvariable=RDS_CPUCount_ComboBox_var)
 RDS_CPUCount_ComboBox.place(x=570, y=190, width=160, height=25)
-ToolTip(RDS_CPUCount_ComboBox, msg="Select the new CPU count")
+ToolTip(RDS_CPUCount_ComboBox, msg="Select the new CPU count", delay=0.1)
 
-RDS_CoresPerSocket_ComboBox = ttk.Combobox(tab2, state="disabled")
+RDS_CoresPerSocket_ComboBox_var = tk.StringVar()
+RDS_CoresPerSocket_ComboBox = ttk.Combobox(tab2, state="disabled", values=onetosixtyfour,textvariable=RDS_CoresPerSocket_ComboBox_var)
 RDS_CoresPerSocket_ComboBox.place(x=570, y=220, width=160, height=25)
-ToolTip(RDS_CoresPerSocket_ComboBox, msg="Select the number of cores per socket")
+ToolTip(RDS_CoresPerSocket_ComboBox, msg="Select the number of cores per socket", delay=0.1)
+
+RDS_Secondary_Machine_Options_Combobox_var = tk.StringVar()
+RDS_Secondary_Machine_Options_Combobox= ttk.Combobox(tab2, state="disabled", values=["Don't deploy to machines", "First xx percent of machines", "First xx amount of machines"], textvariable=RDS_Secondary_Machine_Options_Combobox_var)
+RDS_Secondary_Machine_Options_Combobox_default_value = "Don't deploy to machines"
+RDS_Secondary_Machine_Options_Combobox.set(RDS_Secondary_Machine_Options_Combobox_default_value)
+RDS_Secondary_Machine_Options_Combobox.bind("<<ComboboxSelected>>",RDS_Secondary_Machine_Options_Combobox_callback)
+RDS_Secondary_Machine_Options_Combobox.place(x=30, y=413, height=25, width=300)
+ToolTip(RDS_Secondary_Machine_Options_Combobox, msg="Select selection type of secondary machines", delay=0.1)
 
 # Create Checkboxes
 RDS_secondaryimage_checkbox_var = tk.BooleanVar()
-RDS_secondaryimage_checkbox = ttk.Checkbutton(tab2, text="Push as Secondary Image", variable=RDS_secondaryimage_checkbox_var)
-RDS_secondaryimage_checkbox.place(x=570, y=342)
-ToolTip(RDS_secondaryimage_checkbox, msg="Check to deploy the new golden image as a secondary image")
+RDS_secondaryimage_checkbox = ttk.Checkbutton(tab2, state="disabled", text="Push as Secondary Image", variable=RDS_secondaryimage_checkbox_var, command=RDS_secondaryimage_checkbox_callback)
+RDS_secondaryimage_checkbox.place(x=570, y=390)
+ToolTip(RDS_secondaryimage_checkbox, msg="Check to deploy the new golden image as a secondary image", delay=0.1)
 
 RDS_StopOnError_checkbox_var = tk.BooleanVar()
-RDS_StopOnError_checkbox = ttk.Checkbutton(tab2, text="Stop on error", variable=RDS_StopOnError_checkbox_var)
+RDS_StopOnError_checkbox = ttk.Checkbutton(tab2, state="disabled", text="Stop on error", variable=RDS_StopOnError_checkbox_var)
 RDS_StopOnError_checkbox.place(x=570, y=90)
-ToolTip(RDS_StopOnError_checkbox, msg="CHeck to make sure deployment of new desktops stops on an error")
+ToolTip(RDS_StopOnError_checkbox, msg="CHeck to make sure deployment of new desktops stops on an error", delay=0.1)
 RDS_StopOnError_checkbox_var.set(True)
 
 RDS_Resize_checkbox_var = tk.BooleanVar()
-RDS_Resize_checkbox = ttk.Checkbutton(tab2, text="Enable Resize Options", variable=RDS_Resize_checkbox_var)
+RDS_Resize_checkbox = ttk.Checkbutton(tab2, state="disabled" ,text="Enable Resize Options", variable=RDS_Resize_checkbox_var, command=RDS_Resize_checkbox_callback)
 RDS_Resize_checkbox.place(x=570, y=137)
-ToolTip(RDS_Resize_checkbox, msg="Check to enable resizing of the Golden Image in the Desktop Pool")
+ToolTip(RDS_Resize_checkbox, msg="Check to enable resizing of the Golden Image in the Rds Farm", delay=0.1)
+RDS_Resize_checkbox_var.set(False)
 
 RDS_Enable_datetimepicker_checkbox_var = tk.BooleanVar()
-RDS_Enable_datetimepicker_checkbox = ttk.Checkbutton(tab2, text="Schedule deployment", variable=RDS_Enable_datetimepicker_checkbox_var)
+RDS_Enable_datetimepicker_checkbox = ttk.Checkbutton(tab2, state="disabled", text="Schedule deployment", variable=RDS_Enable_datetimepicker_checkbox_var, command=RDS_Enable_datetimepicker_checkbox_callback)
 RDS_Enable_datetimepicker_checkbox.place(x=570, y=250)
-ToolTip(RDS_Enable_datetimepicker_checkbox, msg="Check to enable a scheduled deployment of the new image")
+ToolTip(RDS_Enable_datetimepicker_checkbox, msg="Check to enable a scheduled deployment of the new image", delay=0.1)
 
 # Create other Widgets
-RDS_Status_Textblock = tk.Text(tab2, borderwidth=1, relief="solid", wrap="word")
+RDS_Status_Textblock = tk.Text(tab2, borderwidth=1, relief="solid", wrap="word", state="normal")
 RDS_Status_Textblock.place(x=30, y=80, height=305, width=510)
+RDS_Status_Textblock.insert(tk.END, "No Info yet")
 
-RDS_Machines_ListBox = tk.Listbox(tab2, selectmode="multiple")
-RDS_Machines_ListBox.place(x=30, y=413, height=150, width=300)
-
-RDS_cal = DateEntry(tab2,bg="darkblue",fg="white",year=2023)
+RDS_cal = DateEntry(tab2,bg="darkblue",fg="white", year=current_datetime.year, month=current_datetime.month, day=current_datetime.day)
 RDS_cal.config(state="disabled")
 RDS_cal.place(x=570,y=280)
 
-RDS_TimePicker = SpinTimePickerModern(tab2)
-RDS_TimePicker.addAll(constants.HOURS24)  # adds hours clock, minutes and period
-RDS_TimePicker.place(x=570,y=310)
+RDS_hour_label = ttk.Label(tab2, text="Hour:")
+RDS_hour_label.place(x=570, y=310)
+RDS_hour_spin = tk.Spinbox(tab2, from_=0, to=23, width=2, value=current_datetime.hour, state="disabled")
+RDS_hour_spin.place(x=570, y=340)
+
+RDS_minute_label = ttk.Label(tab2, text="Minute:", anchor='w')
+RDS_minute_label.place(x=650, y=310)
+RDS_minute_spin = tk.Spinbox(tab2, from_=0, to=59, width=2, value=current_datetime.minute, state="disabled")
+RDS_minute_spin.place(x=650, y=340)
+
+RDS_machinecount_textbox = ttk.Entry(tab2, validate="key", validatecommand=(validate_int, "%P"), state="disabled")
+RDS_machinecount_textbox.place(x=30, y=450, height=25, width=60)
+ToolTip(RDS_machinecount_textbox, msg="ENter number or percentage of machines to apply the secondary image to", delay=0.1)
 
 #endregion
 
@@ -1160,7 +1536,7 @@ config_save_password_checkbox_var.set(config_save_password)
 # tooltip_label = ttk.Label(root, background="yellow", relief="solid", padding=(5, 2), justify="left")
 # tooltip_label.place_forget()
 
-tab_control.select(tab1)
+tab_control.select(tab2)
 
 # Start the GUI event loop
 root.mainloop()
