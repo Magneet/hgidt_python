@@ -2,8 +2,6 @@ import tkinter as tk
 from tkinter import ttk,simpledialog
 from tktooltip import ToolTip
 from tkcalendar import DateEntry
-from tktimepicker import SpinTimePickerModern
-from tktimepicker import constants
 from datetime import datetime,time as dt_time 
 import configparser, os, horizon_functions, logging, sys,warnings, keyring,requests, json, threading,time, math
 from logging.handlers import RotatingFileHandler
@@ -78,7 +76,7 @@ current_datetime = datetime.now()
 while current_memory <= memory_end_value:
     memory_list.append(current_memory)
     current_memory += memory_increment
-logo_image="hgidt_logo.ico"
+# logo_image="hgidt_logo.ico"
 #endregion
 
 #region Configuration related functions
@@ -484,30 +482,32 @@ def RDS_Apply_Secondary_Image_button_callback():
         pod = global_RDS_selected_farm["pod"]
         hvconnectionobj = connect_pod(pod=pod)
         horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-        pool_id = global_RDS_selected_farm['id']
+        farm_id = global_RDS_selected_farm['id']
         selected_machine_count = int(RDS_machinecount_textbox.get())
-        machinefilter = {}
-        machinefilter["type"] = "Equals"
-        machinefilter["name"] = "rds_farm_id"
-        machinefilter["value"] = pool_id
-        machines = horizon_inventory.get_machines(filter=machinefilter)
+        rdsmachinefilter = {}
+        rdsmachinefilter["type"] = "Equals"
+        rdsmachinefilter["name"] = "farm_id"
+        rdsmachinefilter["value"] = farm_id
+        machines = horizon_inventory.get_rds_servers(filter=rdsmachinefilter)
         machines = sorted(machines, key=lambda x: x["name"])
         if "percent" in RDS_Secondary_Machine_Options_Combobox_var.get():
             machinecount = len(machines)
             selected_machine_count = math.ceil((selected_machine_count / 100) * machinecount)
             selected_machines = [d for d in machines[:selected_machine_count]]
-            selected_machine_ids = [item["id"] for item in selected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] == global_RDS_selected_farm["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
+            selected_machine_ids = [item["id"] for item in selected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] == global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
             unselected_machines = [d for d in machines[selected_machine_count:]]
-            unselected_machine_ids = [item["id"] for item in unselected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_RDS_selected_farm["provisioning_settings"]["base_snapshot_id"]]
+            unselected_machine_ids = [item["id"] for item in unselected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_RDS_selected_farm["automated_farm_settings"]["provisioning_settings"]["base_snapshot_id"]]
         else:
             selected_machines = [d for d in machines[:selected_machine_count]]
-            selected_machine_ids = [item["id"] for item in selected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_RDS_selected_farm["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
+            selected_machine_ids = [item["id"] for item in selected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
             unselected_machines = [d for d in machines[selected_machine_count:]]
-            unselected_machine_ids = [item["id"] for item in unselected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_RDS_selected_farm["provisioning_settings"]["base_snapshot_id"]]
+            unselected_machine_ids = [item["id"] for item in unselected_machines if item["managed_machine_data"]["base_vm_snapshot_id"] != global_RDS_selected_farm["automated_farm_settings"]["provisioning_settings"]["base_snapshot_id"]]
         if len(selected_machine_ids) !=0:
-            horizon_inventory.apply_pending_rds_farm_image(rds_farm_id=pool_id,machine_ids=selected_machine_ids,pending_image=True)
+            print("bla")
+            # horizon_inventory.rds_farm_schedule_maintenance(farm_id=farm_id,machine_ids=selected_machine_ids,pending_image=True,maintenance_mode="IMMEDIATE")
         if len(unselected_machine_ids) != 0:
-            horizon_inventory.apply_pending_rds_farm_image(rds_farm_id=pool_id,machine_ids=unselected_machine_ids,pending_image=False)
+            print("bla")
+            # horizon_inventory.rds_farm_schedule_maintenance(farm_id=farm_id,machine_ids=unselected_machine_ids,pending_image=False,maintenance_mode="IMMEDIATE")
         RDS_Secondary_Machine_Options_Combobox.config(state="disabled")
         RDS_machinecount_textbox.config(state="disabled")
         RDS_Apply_Golden_Image_button.config(state="disabled")
@@ -578,14 +578,14 @@ def RDS_Apply_Golden_Image_button_callback():
     global global_RDS_selected_farm, global_RDS_selected_vm, global_RDS_selected_vm, hvconnectionobj, RDS_hour_spin, RDS_minute_spin, RDS_cal
     if RDS_Enable_datetimepicker_checkbox_var.get() == True:
         datetime_var= get_selected_datetime(RDS_cal,RDS_hour_spin,RDS_minute_spin)
-        start_time= datetime.timestamp(datetime_var)*1000
+        next_scheduled_time	= datetime.timestamp(datetime_var)*1000
     else:
-        start_time = time.time()
+        next_scheduled_time	 = time.time()
 
     pod = global_RDS_selected_vm["pod"]
     hvconnectionobj = connect_pod(pod=pod)
     horizon_inventory=horizon_functions.Inventory(url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-    pool_id = global_RDS_selected_farm['id']
+    farm_id = global_RDS_selected_farm['id']
     parent_vm_id = global_RDS_selected_vm['id']
     snapshot_id = global_RDS_selected_snapshot['id']
     RDS_Resize_checkbox_var_selected = RDS_Resize_checkbox_var.get()
@@ -596,18 +596,18 @@ def RDS_Apply_Golden_Image_button_callback():
         selected_machine_count = int(RDS_machinecount_textbox.get())
         machinefilter = {}
         machinefilter["type"] = "Equals"
-        machinefilter["name"] = "rds_farm_id"
-        machinefilter["value"] = pool_id
-        machines = horizon_inventory.get_machines(filter=machinefilter)
+        machinefilter["name"] = "farm_id"
+        machinefilter["value"] = farm_id
+        machines = horizon_inventory.get_rds_servers(filter=machinefilter)
         machines = sorted(machines, key=lambda x: x["name"])
         if "percent" in RDS_Secondary_Machine_Options_Combobox_var.get():
             machinecount = len(machines)
             selected_machine_count = math.ceil((selected_machine_count / 100) * machinecount)
-            machine_ids = [d["id"] for d in machines[:selected_machine_count]]
+            rds_server_ids = [d["id"] for d in machines[:selected_machine_count]]
         else:
-            machine_ids = [d["id"] for d in machines[:selected_machine_count]]
+            rds_server_ids = [d["id"] for d in machines[:selected_machine_count]]
     else:
-        machine_ids = None
+        rds_server_ids = None
     if RDS_Resize_checkbox_var_selected == True and RDS_CoresPerSocket_ComboBox_var_selected and RDS_CPUCount_ComboBox_var_selected and RDS_Memory_ComboBox_var_selected:
         compute_profile_num_cores_per_socket=RDS_CoresPerSocket_ComboBox_var.get()
         compute_profile_num_cpus = RDS_CPUCount_ComboBox_var.get()
@@ -617,7 +617,7 @@ def RDS_Apply_Golden_Image_button_callback():
         compute_profile_num_cpus = None
         compute_profile_ram_mb = None
 
-    horizon_inventory.rds_farm_push_image(rds_farm_id=pool_id,parent_vm_id=parent_vm_id,snapshot_id=snapshot_id,machine_ids=machine_ids, compute_profile_ram_mb = compute_profile_ram_mb, compute_profile_num_cpus=compute_profile_num_cpus, compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket, logoff_policy=RDS_LofOffPolicy_Combobox_var.get(), start_time=start_time, selective_push_image=RDS_secondaryimage_checkbox_var.get() )
+    horizon_inventory.rds_farm_schedule_maintenance(farm_id=farm_id,parent_vm_id=parent_vm_id,maintenance_mode="IMMEDIATE", snapshot_id=snapshot_id,rds_server_ids=rds_server_ids, compute_profile_ram_mb = compute_profile_ram_mb, compute_profile_num_cpus=compute_profile_num_cpus, compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket, logoff_policy=RDS_LofOffPolicy_Combobox_var.get(), next_scheduled_time=next_scheduled_time	, selective_schedule_maintenance=RDS_secondaryimage_checkbox_var.get() )
     RDS_Secondary_Machine_Options_Combobox.config(state="disabled")
     RDS_machinecount_textbox.config(state="disabled")
     RDS_Apply_Golden_Image_button.config(state="disabled")
@@ -1158,7 +1158,7 @@ root = tk.Tk()
 root.title("Horizon Golden Image Deployment Tool")
 
 # Set the custom icon/logo for the taskbar/Dock based on the platform
-root.iconbitmap(logo_image)  # Windows icon file
+# root.iconbitmap(logo_image)  # Windows icon file
 validate_int = root.register(validate_int_func)
 
 root.geometry("1024x660")
