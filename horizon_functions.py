@@ -460,7 +460,7 @@ class Inventory:
                 raise "Error: " + str(e)
 
     def cancel_desktop_pool_push_image(self, desktop_pool_id:str):
-        """Promotes pending image.
+        """Cancels pending image.
 
         Available for Horizon 8 2012 and later."""
         response = requests.post(f'{self.url}/rest/inventory/v1/desktop-pools/{desktop_pool_id}/action/cancel-scheduled-push-image', verify=False,  headers=self.access_token)
@@ -481,7 +481,7 @@ class Inventory:
                 raise "Error: " + str(e)
 
     def promote_pending_desktop_pool_image(self, desktop_pool_id:str):
-        """Cancels push of new golden image.
+        """promotes secondary image.
 
         """
         response = requests.post(f'{self.url}/rest/inventory/v1/desktop-pools/{desktop_pool_id}/action/promote-pending-image', verify=False,  headers=self.access_token)
@@ -502,7 +502,7 @@ class Inventory:
                 raise "Error: " + str(e)
 
     def apply_pending_desktop_pool_image(self, desktop_pool_id:str, machine_ids:list,pending_image:bool):
-        """Cancels push of new golden image.
+        """applies secondary image to selected machines.
 
         """
         headers = self.access_token
@@ -670,6 +670,83 @@ class Inventory:
                 error_message = (response.json())["error_messages"]
             else:
                 error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        if response.status_code == 404:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        elif response.status_code == 403:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        elif response.status_code != 200:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        else:
+            try:
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise "Error: " + str(e)
+
+    def cancel_rds_farm_push_image(self, farm_id:str):
+        """Cancels pending rds image.
+
+        Available for Horizon 8 2012 and later."""
+        headers = self.access_token
+        headers["Content-Type"] = 'application/json'
+        json_data = {
+            'maintenance_mode': 'IMMEDIATE',
+        }
+        response = requests.post(f'{self.url}/rest/inventory/v1/farms/{farm_id}/action/cancel-scheduled-maintenance', verify=False, json=json_data, headers=headers)
+        if response.status_code == 400:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        if response.status_code == 404:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        elif response.status_code == 403:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        elif response.status_code != 204:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        else:
+            try:
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise "Error: " + str(e)
+
+    def promote_pending_rds_farm_image(self, farm_id:str):
+        """promotes secondary rds image.
+
+        """
+        response = requests.post(f'{self.url}/rest/inventory/v1/farms/{farm_id}/action/promote-pending-image', verify=False,  headers=self.access_token)
+        if response.status_code == 400:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        if response.status_code == 404:
+            error_message = (response.json())["error_message"]
+            raise Exception(f"Error {response.status_code}: {error_message}")
+        elif response.status_code == 403:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        elif response.status_code != 204:
+            raise Exception(f"Error {response.status_code}: {response.reason}")
+        else:
+            try:
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                raise "Error: " + str(e)
+
+    def apply_pending_rds_farm_image(self, farm_id:str, machine_ids:list,pending_image:bool):
+        """applies secondary image to selected rds machines.
+
+        """
+        headers = self.access_token
+        headers["Content-Type"] = 'application/json'
+        if pending_image == True:
+            pending_image="true"
+        else:
+            pending_image="false"
+        params = {
+            'pending_image': pending_image
+        }
+        response = requests.post(f'{self.url}/rest/inventory/v1/farms/{farm_id}/action/apply-image?', verify=False,  headers=headers, json=machine_ids, params=params)
+        if response.status_code == 400:
+            error_message = (response.json())["Bad Request"]
             raise Exception(f"Error {response.status_code}: {error_message}")
         if response.status_code == 404:
             error_message = (response.json())["error_message"]
