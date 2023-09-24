@@ -1,0 +1,1 @@
+pyinstaller.exe .\gui_only.py --noconsole --hiddenimport=requests,tkcalendar,horizon_functions.py,tkinter.tk,tkinter.ttk,tkinter,simpledialog,tktooltip.tooltip,tkcalendar.dateentry,datetime.datetime,datetime.time,datetime.time,babel.dates,babel.core,babel.localedata,babel.numbers,loguru --name hgidt --noconfirm --icon=logo.ico --clean --add-data "logo.ico;." --onefile

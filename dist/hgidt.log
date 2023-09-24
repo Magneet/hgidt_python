@@ -1,0 +1,40 @@
+2023-09-24 at 14:30:06 INFO No Connection server and password found in config
+2023-09-24 at 14:30:41 INFO Testing configuration
+2023-09-24 at 14:30:41 INFO Testing connection to: pod1cbr1.loft.lab
+2023-09-24 at 14:30:46 INFO Sucessfully finished testing configuration
+2023-09-24 at 14:30:46 INFO Saving configuration since it works
+2023-09-24 at 14:30:46 INFO Saving configuration
+2023-09-24 at 14:30:46 INFO Password saved to credentials store
+2023-09-24 at 14:30:46 INFO Configuration saved
+2023-09-24 at 14:30:49 INFO Connecting to Pod: Cluster-POD1CBR1
+2023-09-24 at 14:30:49 INFO connecting to: Pod1cbr1.loft.lab
+2023-09-24 at 14:30:50 INFO Connected to: Pod1cbr1.loft.lab
+2023-09-24 at 14:30:50 INFO Getting Desktop Pools with filter {'type': 'And', 'filters': [{'type': 'Equals', 'name': 'source', 'value': 'INSTANT_CLONE'}, {'type': 'Equals', 'name': 'type', 'value': 'AUTOMATED'}]}
+2023-09-24 at 14:30:53 INFO Found Pool: cust1-prod11
+2023-09-24 at 14:30:53 INFO Found Pool: cust1-prod12
+2023-09-24 at 14:30:53 INFO Found Pool: dup_name
+2023-09-24 at 14:30:53 INFO Getting RDS Farms with filter {'type': 'Equals', 'name': 'automated_farm_settings.image_source', 'value': 'VIRTUAL_CENTER'}
+2023-09-24 at 14:30:53 INFO Found: Pod1-Farm01
+2023-09-24 at 14:30:53 INFO Getting vCenters
+2023-09-24 at 14:30:54 INFO Found vCenter: loftvcr01.loft.lab
+2023-09-24 at 14:30:54 INFO Getting datacenters
+2023-09-24 at 14:31:02 INFO Found Datacenter Loft
+2023-09-24 at 14:31:02 INFO Getting Base VMs and snapshots
+2023-09-24 at 14:31:10 INFO Done getting Base VMs and snapshots
+2023-09-24 at 14:31:10 INFO Disconnecting from Pod: Cluster-POD1CBR1
+2023-09-24 at 14:31:10 INFO Connecting to Pod: Cluster-POD2CBR1
+2023-09-24 at 14:31:10 INFO connecting to: Pod2cbr1.loft.lab
+2023-09-24 at 14:31:12 INFO Connected to: Pod2cbr1.loft.lab
+2023-09-24 at 14:31:12 INFO Getting Desktop Pools with filter {'type': 'And', 'filters': [{'type': 'Equals', 'name': 'source', 'value': 'INSTANT_CLONE'}, {'type': 'Equals', 'name': 'type', 'value': 'AUTOMATED'}]}
+2023-09-24 at 14:31:15 INFO Found Pool: cust1-prod21
+2023-09-24 at 14:31:15 INFO Found Pool: cust1-prod22
+2023-09-24 at 14:31:15 INFO Found Pool: dup_name
+2023-09-24 at 14:31:15 INFO Getting RDS Farms with filter {'type': 'Equals', 'name': 'automated_farm_settings.image_source', 'value': 'VIRTUAL_CENTER'}
+2023-09-24 at 14:31:15 INFO Found: Pod2-Farm01
+2023-09-24 at 14:31:15 INFO Getting vCenters
+2023-09-24 at 14:31:16 INFO Found vCenter: loftvcr01.loft.lab
+2023-09-24 at 14:31:16 INFO Getting datacenters
+2023-09-24 at 14:31:25 INFO Found Datacenter Loft
+2023-09-24 at 14:31:25 INFO Getting Base VMs and snapshots
+2023-09-24 at 14:31:34 INFO Done getting Base VMs and snapshots
+2023-09-24 at 14:31:34 INFO Disconnecting from Pod: Cluster-POD2CBR1
