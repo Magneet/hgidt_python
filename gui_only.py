@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, simpledialog
-from tktooltip import ToolTip
+# from tktooltip import ToolTip
 from tkcalendar import DateEntry
 from datetime import datetime, time as dt_time
 import configparser
@@ -1516,8 +1516,8 @@ VDI_DesktopPool_Combobox = ttk.Combobox(
 VDI_DesktopPool_Combobox.place(x=30, y=35, width=220, height=25)
 VDI_DesktopPool_Combobox.bind(
     "<<ComboboxSelected>>", VDI_DesktopPool_Combobox_callback)
-ToolTip(VDI_DesktopPool_Combobox,
-        msg="Select the desktop pool to update", delay=0.1)
+# ToolTip(VDI_DesktopPool_Combobox,
+#         msg="Select the desktop pool to update", delay=0.1)
 
 VDI_Golden_Image_Combobox_var = tk.StringVar()
 VDI_Golden_Image_Combobox = ttk.Combobox(
@@ -1525,7 +1525,7 @@ VDI_Golden_Image_Combobox = ttk.Combobox(
 VDI_Golden_Image_Combobox.place(x=270, y=35, width=220, height=25)
 VDI_Golden_Image_Combobox.bind(
     "<<ComboboxSelected>>", VDI_Golden_Image_Combobox_callback)
-ToolTip(VDI_Golden_Image_Combobox, msg="Select the new source VM", delay=0.1)
+# ToolTip(VDI_Golden_Image_Combobox, msg="Select the new source VM", delay=0.1)
 
 VDI_Snapshot_Combobox_var = tk.StringVar()
 VDI_Snapshot_Combobox = ttk.Combobox(
@@ -1533,7 +1533,7 @@ VDI_Snapshot_Combobox = ttk.Combobox(
 VDI_Snapshot_Combobox.place(x=510, y=35, width=220, height=25)
 VDI_Snapshot_Combobox.bind("<<ComboboxSelected>>",
                            VDI_Snapshot_Combobox_callback)
-ToolTip(VDI_Snapshot_Combobox, msg="Select the new source Snapshot", delay=0.1)
+# ToolTip(VDI_Snapshot_Combobox, msg="Select the new source Snapshot", delay=0.1)
 
 VDI_LofOffPolicy_Combobox_var = tk.StringVar()
 VDI_LofOffPolicy_Combobox = ttk.Combobox(tab1, state="disabled", values=[
@@ -1541,26 +1541,26 @@ VDI_LofOffPolicy_Combobox = ttk.Combobox(tab1, state="disabled", values=[
 VDI_LofOffPolicy_Combobox_default_value = "WAIT_FOR_LOGOFF"
 VDI_LofOffPolicy_Combobox.set(VDI_LofOffPolicy_Combobox_default_value)
 VDI_LofOffPolicy_Combobox.place(x=570, y=80, width=160, height=25)
-ToolTip(VDI_LofOffPolicy_Combobox, msg="Select the logoff Policy", delay=0.1)
+# ToolTip(VDI_LofOffPolicy_Combobox, msg="Select the logoff Policy", delay=0.1)
 
 VDI_Memory_ComboBox_var = tk.StringVar()
 VDI_Memory_ComboBox = ttk.Combobox(
     tab1, state="disabled", values=memory_list, textvariable=VDI_Memory_ComboBox_var)
 VDI_Memory_ComboBox.place(x=570, y=155, width=160, height=25)
-ToolTip(VDI_Memory_ComboBox, msg="Select the new memory size", delay=0.1)
+# ToolTip(VDI_Memory_ComboBox, msg="Select the new memory size", delay=0.1)
 
 VDI_CPUCount_ComboBox_var = tk.StringVar()
 VDI_CPUCount_ComboBox = ttk.Combobox(
     tab1, state="disabled", values=onetosixtyfour, textvariable=VDI_CPUCount_ComboBox_var)
 VDI_CPUCount_ComboBox.place(x=570, y=205, width=160, height=25)
-ToolTip(VDI_CPUCount_ComboBox, msg="Select the new CPU count", delay=0.1)
+# ToolTip(VDI_CPUCount_ComboBox, msg="Select the new CPU count", delay=0.1)
 
 VDI_CoresPerSocket_ComboBox_var = tk.StringVar()
 VDI_CoresPerSocket_ComboBox = ttk.Combobox(
     tab1, state="disabled", values=onetosixtyfour, textvariable=VDI_CoresPerSocket_ComboBox_var)
 VDI_CoresPerSocket_ComboBox.place(x=570, y=255, width=160, height=25)
-ToolTip(VDI_CoresPerSocket_ComboBox,
-        msg="Select the number of cores per socket", delay=0.1)
+# ToolTip(VDI_CoresPerSocket_ComboBox,
+# msg="Select the number of cores per socket", delay=0.1)
 
 VDI_Secondary_Machine_Options_Combobox_var = tk.StringVar()
 VDI_Secondary_Machine_Options_Combobox = ttk.Combobox(tab1, state="disabled", values=[
@@ -1572,45 +1572,45 @@ VDI_Secondary_Machine_Options_Combobox.bind(
     "<<ComboboxSelected>>", VDI_Secondary_Machine_Options_Combobox_callback)
 VDI_Secondary_Machine_Options_Combobox.place(
     x=770, y=275, height=25, width=160)
-ToolTip(VDI_Secondary_Machine_Options_Combobox,
-        msg="Select selection type of secondary machines", delay=0.1)
+# ToolTip(VDI_Secondary_Machine_Options_Combobox,
+#         msg="Select selection type of secondary machines", delay=0.1)
 
 # Create Checkboxes
 VDI_secondaryimage_checkbox_var = tk.BooleanVar()
 VDI_secondaryimage_checkbox = ttk.Checkbutton(tab1, state="disabled", text="Push as Secondary Image",
                                               variable=VDI_secondaryimage_checkbox_var, command=VDI_secondaryimage_checkbox_callback)
 VDI_secondaryimage_checkbox.place(x=750, y=235, height=25)
-ToolTip(VDI_secondaryimage_checkbox,
-        msg="Check to deploy the new golden image as a secondary image", delay=0.1)
+# ToolTip(VDI_secondaryimage_checkbox,
+#         msg="Check to deploy the new golden image as a secondary image", delay=0.1)
 
 VDI_StopOnError_checkbox_var = tk.BooleanVar()
 VDI_StopOnError_checkbox = ttk.Checkbutton(
     tab1, state="disabled", text="Stop on error", variable=VDI_StopOnError_checkbox_var)
 VDI_StopOnError_checkbox.place(x=750, y=100, height=25)
-ToolTip(VDI_StopOnError_checkbox,
-        msg="CHeck to make sure deployment of new desktops stops on an error", delay=0.1)
+# ToolTip(VDI_StopOnError_checkbox,
+# msg="CHeck to make sure deployment of new desktops stops on an error", delay=0.1)
 VDI_StopOnError_checkbox_var.set(True)
 
 VDI_Resize_checkbox_var = tk.BooleanVar()
 VDI_Resize_checkbox = ttk.Checkbutton(tab1, state="disabled", text="Enable Resize Options",
                                       variable=VDI_Resize_checkbox_var, command=VDI_Resize_checkbox_callback)
 VDI_Resize_checkbox.place(x=570, y=110, height=25)
-ToolTip(VDI_Resize_checkbox,
-        msg="Check to enable resizing of the Golden Image in the Desktop Pool", delay=0.1)
+# ToolTip(VDI_Resize_checkbox,
+#         msg="Check to enable resizing of the Golden Image in the Desktop Pool", delay=0.1)
 VDI_Resize_checkbox_var.set(False)
 
 VDI_vtpm_checkbox_var = tk.BooleanVar()
 VDI_vtpm_checkbox = ttk.Checkbutton(
     tab1, state="disabled", text="Add vTPM", variable=VDI_vtpm_checkbox_var)
 VDI_vtpm_checkbox.place(x=750, y=80, height=25)
-ToolTip(VDI_vtpm_checkbox, msg="Check to add a vTPM", delay=0.1)
+# ToolTip(VDI_vtpm_checkbox, msg="Check to add a vTPM", delay=0.1)
 
 VDI_Enable_datetimepicker_checkbox_var = tk.BooleanVar()
 VDI_Enable_datetimepicker_checkbox = ttk.Checkbutton(tab1, state="disabled", text="Schedule deployment",
                                                      variable=VDI_Enable_datetimepicker_checkbox_var, command=VDI_Enable_datetimepicker_checkbox_callback)
 VDI_Enable_datetimepicker_checkbox.place(x=750, y=120, height=25)
-ToolTip(VDI_Enable_datetimepicker_checkbox,
-        msg="Check to enable a scheduled deployment of the new image", delay=0.1)
+# ToolTip(VDI_Enable_datetimepicker_checkbox,
+#         msg="Check to enable a scheduled deployment of the new image", delay=0.1)
 
 # Create other Widgets
 VDI_Status_Textblock = tk.Text(
@@ -1640,8 +1640,8 @@ VDI_minute_spin.place(x=825, y=210)
 VDI_machinecount_textbox = ttk.Entry(
     tab1, validate="key", validatecommand=(validate_int, "%P"), state="readonly")
 VDI_machinecount_textbox.place(x=770, y=320, height=25, width=30)
-ToolTip(VDI_machinecount_textbox,
-        msg="ENter number or percentage of machines to apply the secondary image to", delay=0.1)
+# ToolTip(VDI_machinecount_textbox,
+#         msg="ENter number or percentage of machines to apply the secondary image to", delay=0.1)
 
 # endregion
 
@@ -1726,7 +1726,7 @@ RDS_Farm_Combobox = ttk.Combobox(
     tab2, state="disabled", textvariable=RDS_Farm_Combobox_var)
 RDS_Farm_Combobox.place(x=30, y=35, width=220, height=25)
 RDS_Farm_Combobox.bind("<<ComboboxSelected>>", RDS_Farm_Combobox_callback)
-ToolTip(RDS_Farm_Combobox, msg="Select the Rds Farm to update", delay=0.1)
+# ToolTip(RDS_Farm_Combobox, msg="Select the Rds Farm to update", delay=0.1)
 
 RDS_Golden_Image_Combobox_var = tk.StringVar()
 RDS_Golden_Image_Combobox = ttk.Combobox(
@@ -1734,7 +1734,7 @@ RDS_Golden_Image_Combobox = ttk.Combobox(
 RDS_Golden_Image_Combobox.place(x=270, y=35, width=220, height=25)
 RDS_Golden_Image_Combobox.bind(
     "<<ComboboxSelected>>", RDS_Golden_Image_Combobox_callback)
-ToolTip(RDS_Golden_Image_Combobox, msg="Select the new source VM", delay=0.1)
+# ToolTip(RDS_Golden_Image_Combobox, msg="Select the new source VM", delay=0.1)
 
 RDS_Snapshot_Combobox_var = tk.StringVar()
 RDS_Snapshot_Combobox = ttk.Combobox(
@@ -1742,7 +1742,7 @@ RDS_Snapshot_Combobox = ttk.Combobox(
 RDS_Snapshot_Combobox.place(x=510, y=35, width=220, height=25)
 RDS_Snapshot_Combobox.bind("<<ComboboxSelected>>",
                            RDS_Snapshot_Combobox_callback)
-ToolTip(RDS_Snapshot_Combobox, msg="Select the new source Snapshot", delay=0.1)
+# ToolTip(RDS_Snapshot_Combobox, msg="Select the new source Snapshot", delay=0.1)
 
 RDS_LofOffPolicy_Combobox_var = tk.StringVar()
 RDS_LofOffPolicy_Combobox = ttk.Combobox(tab2, state="disabled", values=[
@@ -1750,26 +1750,26 @@ RDS_LofOffPolicy_Combobox = ttk.Combobox(tab2, state="disabled", values=[
 RDS_LofOffPolicy_Combobox_default_value = "WAIT_FOR_LOGOFF"
 RDS_LofOffPolicy_Combobox.set(RDS_LofOffPolicy_Combobox_default_value)
 RDS_LofOffPolicy_Combobox.place(x=570, y=80, width=160, height=25)
-ToolTip(RDS_LofOffPolicy_Combobox, msg="Select the logoff Policy", delay=0.1)
+# ToolTip(RDS_LofOffPolicy_Combobox, msg="Select the logoff Policy", delay=0.1)
 
 RDS_Memory_ComboBox_var = tk.StringVar()
 RDS_Memory_ComboBox = ttk.Combobox(
     tab2, state="disabled", values=memory_list, textvariable=RDS_Memory_ComboBox_var)
 RDS_Memory_ComboBox.place(x=570, y=155, width=160, height=25)
-ToolTip(RDS_Memory_ComboBox, msg="Select the new memory size", delay=0.1)
+# ToolTip(RDS_Memory_ComboBox, msg="Select the new memory size", delay=0.1)
 
 RDS_CPUCount_ComboBox_var = tk.StringVar()
 RDS_CPUCount_ComboBox = ttk.Combobox(
     tab2, state="disabled", values=onetosixtyfour, textvariable=RDS_CPUCount_ComboBox_var)
 RDS_CPUCount_ComboBox.place(x=570, y=205, width=160, height=25)
-ToolTip(RDS_CPUCount_ComboBox, msg="Select the new CPU count", delay=0.1)
+# ToolTip(RDS_CPUCount_ComboBox, msg="Select the new CPU count", delay=0.1)
 
 RDS_CoresPerSocket_ComboBox_var = tk.StringVar()
 RDS_CoresPerSocket_ComboBox = ttk.Combobox(
     tab2, state="disabled", values=onetosixtyfour, textvariable=RDS_CoresPerSocket_ComboBox_var)
 RDS_CoresPerSocket_ComboBox.place(x=570, y=255, width=160, height=25)
-ToolTip(RDS_CoresPerSocket_ComboBox,
-        msg="Select the number of cores per socket", delay=0.1)
+# ToolTip(RDS_CoresPerSocket_ComboBox,
+# msg="Select the number of cores per socket", delay=0.1)
 
 RDS_Secondary_Machine_Options_Combobox_var = tk.StringVar()
 RDS_Secondary_Machine_Options_Combobox = ttk.Combobox(tab2, state="disabled", values=[
@@ -1781,39 +1781,39 @@ RDS_Secondary_Machine_Options_Combobox.bind(
     "<<ComboboxSelected>>", RDS_Secondary_Machine_Options_Combobox_callback)
 RDS_Secondary_Machine_Options_Combobox.place(
     x=770, y=275, height=25, width=160)
-ToolTip(RDS_Secondary_Machine_Options_Combobox,
-        msg="Select selection type of secondary machines", delay=0.1)
+# ToolTip(RDS_Secondary_Machine_Options_Combobox,
+#         msg="Select selection type of secondary machines", delay=0.1)
 
 # Create Checkboxes
 RDS_secondaryimage_checkbox_var = tk.BooleanVar()
 RDS_secondaryimage_checkbox = ttk.Checkbutton(tab2, state="disabled", text="Push as Secondary Image",
                                               variable=RDS_secondaryimage_checkbox_var, command=RDS_secondaryimage_checkbox_callback)
 RDS_secondaryimage_checkbox.place(x=750, y=235, height=25)
-ToolTip(RDS_secondaryimage_checkbox,
-        msg="Check to deploy the new golden image as a secondary image", delay=0.1)
+# ToolTip(RDS_secondaryimage_checkbox,
+#         msg="Check to deploy the new golden image as a secondary image", delay=0.1)
 
 RDS_StopOnError_checkbox_var = tk.BooleanVar()
 RDS_StopOnError_checkbox = ttk.Checkbutton(
     tab2, state="disabled", text="Stop on error", variable=RDS_StopOnError_checkbox_var)
 RDS_StopOnError_checkbox.place(x=750, y=100, height=25)
-ToolTip(RDS_StopOnError_checkbox,
-        msg="CHeck to make sure deployment of new desktops stops on an error", delay=0.1)
+# ToolTip(RDS_StopOnError_checkbox,
+#         msg="CHeck to make sure deployment of new desktops stops on an error", delay=0.1)
 RDS_StopOnError_checkbox_var.set(True)
 
 RDS_Resize_checkbox_var = tk.BooleanVar()
 RDS_Resize_checkbox = ttk.Checkbutton(tab2, state="disabled", text="Enable Resize Options",
                                       variable=RDS_Resize_checkbox_var, command=RDS_Resize_checkbox_callback)
 RDS_Resize_checkbox.place(x=570, y=110, height=25)
-ToolTip(RDS_Resize_checkbox,
-        msg="Check to enable resizing of the Golden Image in the Rds Farm", delay=0.1)
+# ToolTip(RDS_Resize_checkbox,
+#         msg="Check to enable resizing of the Golden Image in the Rds Farm", delay=0.1)
 RDS_Resize_checkbox_var.set(False)
 
 RDS_Enable_datetimepicker_checkbox_var = tk.BooleanVar()
 RDS_Enable_datetimepicker_checkbox = ttk.Checkbutton(tab2, state="disabled", text="Schedule deployment",
                                                      variable=RDS_Enable_datetimepicker_checkbox_var, command=RDS_Enable_datetimepicker_checkbox_callback)
 RDS_Enable_datetimepicker_checkbox.place(x=750, y=120, height=25)
-ToolTip(RDS_Enable_datetimepicker_checkbox,
-        msg="Check to enable a scheduled deployment of the new image", delay=0.1)
+# ToolTip(RDS_Enable_datetimepicker_checkbox,
+#         msg="Check to enable a scheduled deployment of the new image", delay=0.1)
 
 # Create other Widgets
 RDS_Status_Textblock = tk.Text(
@@ -1837,8 +1837,8 @@ RDS_minute_spin.place(x=825, y=210)
 RDS_machinecount_textbox = ttk.Entry(
     tab2, validate="key", validatecommand=(validate_int, "%P"), state="readonly")
 RDS_machinecount_textbox.place(x=770, y=320, height=25, width=30)
-ToolTip(RDS_machinecount_textbox,
-        msg="ENter number or percentage of machines to apply the secondary image to", delay=0.1)
+# ToolTip(RDS_machinecount_textbox,
+#         msg="ENter number or percentage of machines to apply the secondary image to", delay=0.1)
 
 # endregion
 
