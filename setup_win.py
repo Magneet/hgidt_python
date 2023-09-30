@@ -10,11 +10,11 @@ include_files = [os.path.join(PYTHON_INSTALL_DIR, 'DLLs', 'tk86t.dll'),
                  'logo.ico']
 
 setup(
-    name='Horizon GOlden Image deployment Tool',
-    description='A brief description of your program.',
+    name='Horizon Golden Image deployment Tool',
     version='1',
     options={'build_exe': {'include_files': include_files}},
     includes=["tkinter.tktooltip", "tkcalendar", "horizon_functions"],
     executables=[Executable('gui_only.py',
+                            icon='hgidt_logo.ico', 
                             base='Win32GUI')]
 )

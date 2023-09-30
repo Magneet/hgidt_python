@@ -15,6 +15,7 @@ import sys
 import math
 import argparse
 import loguru
+from ttkthemes import ThemedTk
 from loguru import logger
 from logging.handlers import RotatingFileHandler
 
@@ -1400,7 +1401,8 @@ def textbox_handle_focus_out(event, default_text):
 
 
 # region Generic tkinter config
-root = tk.Tk()
+# root = tk.Tk()
+root = ThemedTk(theme="plastik",themebg=True)
 root.title("Horizon Golden Image Deployment Tool")
 
 # Set the custom icon/logo for the taskbar/Dock based on the platform
@@ -1413,10 +1415,10 @@ validate_int = root.register(validate_int_func)
 
 root.geometry("950x470")
 
-style = ttk.Style()
-style.map(
-    "TButton", foreground=[('disabled', 'black')]
-)
+# style = ttk.Style()
+# style.map(
+#     "TButton", foreground=[('disabled', 'black')]
+# )
 # style.configure("Centered.TButton", padding=(10, 5))
 # style.configure('Custom.TFrame', background="ghost white")
 
@@ -1465,19 +1467,19 @@ VDI_Promote_Secondary_Image_button = ttk.Button(
 VDI_Promote_Secondary_Image_button.place(x=570, y=355, width=160, height=25)
 
 # Create Labels
-VDI_Statusbox_Label = tk.Label(
+VDI_Statusbox_Label = ttk.Label(
     tab1, borderwidth=1, text="Status: Not Connected", anchor="w", justify="right")
 VDI_Statusbox_Label.place(x=30, y=385, width=510)
 
-VDI_DesktopPool_Label = tk.Label(
+VDI_DesktopPool_Label = ttk.Label(
     tab1, borderwidth=1, text="Desktop Pool", justify="right")
 VDI_DesktopPool_Label.place(x=30, y=10)
 
-VDI_Golden_Image_Label = tk.Label(
+VDI_Golden_Image_Label = ttk.Label(
     tab1, borderwidth=1, text="Source VM", justify="right")
 VDI_Golden_Image_Label.place(x=270, y=10)
 
-VDI_Snapshot_Label = tk.Label(
+VDI_Snapshot_Label = ttk.Label(
     tab1, borderwidth=1, text="Source Snapshot", justify="right")
 VDI_Snapshot_Label.place(x=510, y=10)
 
@@ -1628,12 +1630,12 @@ VDI_cal = DateEntry(tab1, bg="darkblue", fg="white", year=current_datetime.year,
 VDI_cal.config(state="disabled")
 VDI_cal.place(x=770, y=165)
 
-VDI_hour_spin = tk.Spinbox(
+VDI_hour_spin = ttk.Spinbox(
     tab1, from_=0, to=23, width=2, value=current_datetime.hour, state="disabled")
 VDI_hour_spin.place(x=775, y=210)
 
 
-VDI_minute_spin = tk.Spinbox(
+VDI_minute_spin = ttk.Spinbox(
     tab1, from_=0, to=59, width=2, value=current_datetime.minute, state="disabled")
 VDI_minute_spin.place(x=825, y=210)
 
@@ -1676,19 +1678,19 @@ RDS_Promote_Secondary_Image_button = ttk.Button(
 RDS_Promote_Secondary_Image_button.place(x=570, y=483, width=220, height=25)
 
 # Create Labels
-RDS_Statusbox_Label = tk.Label(
+RDS_Statusbox_Label = ttk.Label(
     tab2, borderwidth=1, text="Status: Not Connected", anchor="w", justify="right")
 RDS_Statusbox_Label.place(x=30, y=385, width=510)
 
-RDS_DesktopPool_Label = tk.Label(
+RDS_DesktopPool_Label = ttk.Label(
     tab2, borderwidth=1, text="RDS Farm", justify="right")
 RDS_DesktopPool_Label.place(x=30, y=10)
 
-RDS_Golden_Image_Label = tk.Label(
+RDS_Golden_Image_Label = ttk.Label(
     tab2, borderwidth=1, text="Source VM", justify="right")
 RDS_Golden_Image_Label.place(x=270, y=10)
 
-RDS_Snapshot_Label = tk.Label(
+RDS_Snapshot_Label = ttk.Label(
     tab2, borderwidth=1, text="Source Snapshot", justify="right")
 RDS_Snapshot_Label.place(x=510, y=10)
 
@@ -1826,11 +1828,11 @@ RDS_cal = DateEntry(tab2, bg="darkblue", fg="white", year=current_datetime.year,
 RDS_cal.config(state="disabled")
 RDS_cal.place(x=770, y=165)
 
-RDS_hour_spin = tk.Spinbox(
+RDS_hour_spin = ttk.Spinbox(
     tab2, from_=0, to=23, width=2, value=current_datetime.hour, state="disabled")
 RDS_hour_spin.place(x=775, y=210)
 
-RDS_minute_spin = tk.Spinbox(
+RDS_minute_spin = ttk.Spinbox(
     tab2, from_=0, to=59, width=2, value=current_datetime.minute, state="disabled")
 RDS_minute_spin.place(x=825, y=210)
 
