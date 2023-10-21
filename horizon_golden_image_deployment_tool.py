@@ -1,23 +1,20 @@
 import tkinter as tk
 from tkinter import ttk, simpledialog
-# from tktooltip import ToolTip
 from tkcalendar import DateEntry
 from datetime import datetime, time as dt_time
 import configparser
 import os
 import horizon_functions
-import logging
 import keyring
 import requests
 import threading
 import time
 import sys
 import math
-import argparse
 import loguru
 from ttkthemes import ThemedTk
 from loguru import logger
-from logging.handlers import RotatingFileHandler
+
 
 application_name = "hgidt"
 requests.packages.urllib3.disable_warnings()
@@ -26,33 +23,6 @@ requests.packages.urllib3.disable_warnings()
 logger.add('hgidt.log', retention="10 days", rotation="50 MB",
            format="{time:YYYY-MM-DD at HH:mm:ss} {level} {message}", level="INFO", enqueue=True, backtrace=True, diagnose=True, catch=True)
 
-
-# def log_exception(*args):
-#     if len(args) == 1:
-#         e = args[0]
-#         etype, value, tb = type(e), e, e.__traceback__
-#     elif len(args) == 3:
-#         etype, value, tb = args
-#     else:
-#         logger.error("Not able to log exception. Wrong number of arguments given. Should either receive 1 argument "
-#                      "- an exception, or 3 arguments: exc type, exc value and traceback")
-#         return
-
-#     tb_parsed = []
-#     for filename, lineno, func, text in traceback.extract_tb(tb):
-#         tb_parsed.append(
-#             {"filename": filename, "lineno": lineno, "func": func, "text": text})
-
-#     logger.error(
-#         "Uncaught exception", extra={
-#             "exception": traceback.format_exception_only(etype, value)[0].strip(),
-#             "traceback": tb_parsed
-#         }
-#     )
-
-
-# # Set the custom exception handler
-# sys.excepthook = log_exception
 
 # endregion
 
@@ -92,7 +62,6 @@ if 'Connection_Servers' in config:
     config_connection_servers = eval(config_connection_servers_data)
 else:
     config_connection_servers = []
-
 
 hvconnectionobj = None
 onetosixtyfour = list(range(1, 65))
@@ -467,7 +436,7 @@ def VDI_DesktopPool_Combobox_callback(event):
             "provisioning_status_data"]["instant_clone_pending_image_state"]
     except:
         instant_clone_pending_image_state = "N/A"
-    vdi_textblock_text = f"Desktop Pool Status:\nName: {pool_name}\nDisplay Name: {pool_displayname}\nDesktop Pool State = {state}\nProvisioning State = {provisioning_state}\nCurrent Image State = {current_image_state}\nInstant Clone Operation = {instant_clone_operation}\nImage Deployment time = {deployment_time}\nBase VM = {primary_basevm_name}\nBase Snapshot = {primary_basesnapshot_name}\nSecondary or Pending VM = {secondary_basevm_name}\nSecondary or Pending SNapshot = {secondary_basesnapshot_name}\nPending Image State = {instant_clone_pending_image_state}\nPending Image Progress = {provisioning_progress}"
+    vdi_textblock_text = f"Desktop Pool Status:\nName: {pool_name}\nDisplay Name: {pool_displayname}\nDesktop Pool State = {state}\nProvisioning State = {provisioning_state}\nCurrent Image State = {current_image_state}\nInstant Clone Operation = {instant_clone_operation}\nImage Deployment time = {deployment_time}\nBase VM = {primary_basevm_name}\nBase Snapshot = {primary_basesnapshot_name}\nSecondary or Pending VM = {secondary_basevm_name}\nSecondary or Pending Snapshot = {secondary_basesnapshot_name}\nPending Image State = {instant_clone_pending_image_state}\nPending Image Progress = {provisioning_progress}"
     VDI_Status_Textblock.delete(1.0, tk.END)
     VDI_Status_Textblock.insert(tk.END, vdi_textblock_text)
     if (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "N/A") or (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "FAILED"):
@@ -859,7 +828,7 @@ def RDS_Farm_Combobox_callback(event):
             "provisioning_status_data"]["instant_clone_pending_image_state"]
     except:
         instant_clone_pending_image_state = "N/A"
-    RDS_textblock_text = f"Desktop Pool Status:\nName: {pool_name}\nDisplay Name: {pool_displayname}\nDesktop Pool State = {state}\nProvisioning State = {provisioning_state}\nCurrent Image State = {current_image_state}\nInstant Clone Operation = {instant_clone_operation}\nImage Deployment time = {deployment_time}\nBase VM = {primary_basevm_name}\nBase Snapshot = {primary_basesnapshot_name}\nSecondary or Pending VM = {secondary_basevm_name}\nSecondary or Pending SNapshot = {secondary_basesnapshot_name}\nPending Image State = {instant_clone_pending_image_state}\nPending Image Progress = {provisioning_progress}"
+    RDS_textblock_text = f"Desktop Pool Status:\nName: {pool_name}\nDisplay Name: {pool_displayname}\nDesktop Pool State = {state}\nProvisioning State = {provisioning_state}\nCurrent Image State = {current_image_state}\nInstant Clone Operation = {instant_clone_operation}\nImage Deployment time = {deployment_time}\nBase VM = {primary_basevm_name}\nBase Snapshot = {primary_basesnapshot_name}\nSecondary or Pending VM = {secondary_basevm_name}\nSecondary or Pending Snapshot = {secondary_basesnapshot_name}\nPending Image State = {instant_clone_pending_image_state}\nPending Image Progress = {provisioning_progress}"
     RDS_Status_Textblock.delete(1.0, tk.END)
     RDS_Status_Textblock.insert(tk.END, RDS_textblock_text)
     if (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "N/A") or (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "FAILED"):
@@ -1402,29 +1371,16 @@ def textbox_handle_focus_out(event, default_text):
 
 # region Generic tkinter config
 # root = tk.Tk()
-root = ThemedTk(theme="plastik",themebg=True)
+root = ThemedTk(theme="plastik", themebg=True)
 root.title("Horizon Golden Image Deployment Tool")
 
 # Set the custom icon/logo for the taskbar/Dock based on the platform
 # root.iconbitmap(logo_image)  # Windows icon file
 iconPath = resource_path(logo_image)
 root.iconbitmap(iconPath)
-# iconimage = tk.PhotoImage(file="logo.ico")
-# root.iconphoto(False, iconimage)
 validate_int = root.register(validate_int_func)
 
 root.geometry("950x470")
-
-# style = ttk.Style()
-# style.map(
-#     "TButton", foreground=[('disabled', 'black')]
-# )
-# style.configure("Centered.TButton", padding=(10, 5))
-# style.configure('Custom.TFrame', background="ghost white")
-
-# root.tk_setPalette(background="ghost white", foreground='black', activeBackground="ghost white", activeForeground='black')
-# root.option_add('*TFrame*background', "ghost white")
-# root.option_add('*TFrame*foreground', 'black')
 
 # Create Canvas
 canvas = tk.Canvas(root)
@@ -1503,13 +1459,13 @@ VDI_CoresPerSocket_label.place(x=570, y=235)
 
 VDI_secondary_image_machine_options_label = ttk.Label(
     tab1, text="Secondary Image Options")
-VDI_secondary_image_machine_options_label.place(x=770, y=255)
+VDI_secondary_image_machine_options_label.place(x=770, y=265)
 
 VDI_secondary_image_machine_count_label = ttk.Label(tab1, state="disabled")
 VDI_secondary_image_machine_count_label_default = "Select method first"
 VDI_secondary_image_machine_count_label.config(
     text=VDI_secondary_image_machine_count_label_default)
-VDI_secondary_image_machine_count_label.place(x=770, y=300)
+VDI_secondary_image_machine_count_label.place(x=770, y=315)
 
 # Create ComboBoxes
 VDI_DesktopPool_Combobox_var = tk.StringVar()
@@ -1573,7 +1529,7 @@ VDI_Secondary_Machine_Options_Combobox.set(
 VDI_Secondary_Machine_Options_Combobox.bind(
     "<<ComboboxSelected>>", VDI_Secondary_Machine_Options_Combobox_callback)
 VDI_Secondary_Machine_Options_Combobox.place(
-    x=770, y=275, height=25, width=160)
+    x=770, y=285, height=25, width=160)
 # ToolTip(VDI_Secondary_Machine_Options_Combobox,
 #         msg="Select selection type of secondary machines", delay=0.1)
 
@@ -1641,7 +1597,7 @@ VDI_minute_spin.place(x=825, y=210)
 
 VDI_machinecount_textbox = ttk.Entry(
     tab1, validate="key", validatecommand=(validate_int, "%P"), state="readonly")
-VDI_machinecount_textbox.place(x=770, y=320, height=25, width=30)
+VDI_machinecount_textbox.place(x=770, y=335, height=25, width=30)
 # ToolTip(VDI_machinecount_textbox,
 #         msg="ENter number or percentage of machines to apply the secondary image to", delay=0.1)
 
@@ -1675,7 +1631,7 @@ RDS_Cancel_Secondary_Image_button.place(x=570, y=295, width=160, height=25)
 
 RDS_Promote_Secondary_Image_button = ttk.Button(
     tab2, state="disabled", text="Promote secondary Image", command=RDS_Promote_Secondary_Image_button_callback)
-RDS_Promote_Secondary_Image_button.place(x=570, y=483, width=220, height=25)
+RDS_Promote_Secondary_Image_button.place(x=570, y=355, width=160, height=25)
 
 # Create Labels
 RDS_Statusbox_Label = ttk.Label(
@@ -1714,13 +1670,13 @@ RDS_CoresPerSocket_label.place(x=570, y=235)
 
 RDS_secondary_image_machine_options_label = ttk.Label(
     tab2, text="Secondary Image Options")
-RDS_secondary_image_machine_options_label.place(x=770, y=255)
+RDS_secondary_image_machine_options_label.place(x=770, y=265)
 
 RDS_secondary_image_machine_count_label = ttk.Label(tab2, state="disabled")
 RDS_secondary_image_machine_count_label_default = "Select method first"
 RDS_secondary_image_machine_count_label.config(
     text=RDS_secondary_image_machine_count_label_default)
-RDS_secondary_image_machine_count_label.place(x=770, y=300)
+RDS_secondary_image_machine_count_label.place(x=770, y=315)
 
 # Create ComboBoxes
 RDS_Farm_Combobox_var = tk.StringVar()
@@ -1782,7 +1738,7 @@ RDS_Secondary_Machine_Options_Combobox.set(
 RDS_Secondary_Machine_Options_Combobox.bind(
     "<<ComboboxSelected>>", RDS_Secondary_Machine_Options_Combobox_callback)
 RDS_Secondary_Machine_Options_Combobox.place(
-    x=770, y=275, height=25, width=160)
+    x=770, y=285, height=25, width=160)
 # ToolTip(RDS_Secondary_Machine_Options_Combobox,
 #         msg="Select selection type of secondary machines", delay=0.1)
 
@@ -1790,7 +1746,7 @@ RDS_Secondary_Machine_Options_Combobox.place(
 RDS_secondaryimage_checkbox_var = tk.BooleanVar()
 RDS_secondaryimage_checkbox = ttk.Checkbutton(tab2, state="disabled", text="Push as Secondary Image",
                                               variable=RDS_secondaryimage_checkbox_var, command=RDS_secondaryimage_checkbox_callback)
-RDS_secondaryimage_checkbox.place(x=750, y=235, height=25)
+RDS_secondaryimage_checkbox.place(x=750, y=240, height=25)
 # ToolTip(RDS_secondaryimage_checkbox,
 #         msg="Check to deploy the new golden image as a secondary image", delay=0.1)
 
@@ -1838,7 +1794,7 @@ RDS_minute_spin.place(x=825, y=210)
 
 RDS_machinecount_textbox = ttk.Entry(
     tab2, validate="key", validatecommand=(validate_int, "%P"), state="readonly")
-RDS_machinecount_textbox.place(x=770, y=320, height=25, width=30)
+RDS_machinecount_textbox.place(x=770, y=335, height=25, width=30)
 # ToolTip(RDS_machinecount_textbox,
 #         msg="ENter number or percentage of machines to apply the secondary image to", delay=0.1)
 
@@ -1855,19 +1811,19 @@ tab_control.add(tab3, text="Configuration")
 
 config_get_password_button = ttk.Button(
     tab3, text="Get Password", command=show_password_dialog)
-config_get_password_button.place(x=30, y=150)
+config_get_password_button.place(x=30, y=200, width=150)
 
 config_save_button = ttk.Button(
     tab3, text="Save Configuration", command=config_save_button_callback)
-config_save_button.place(x=30, y=226)
+config_save_button.place(x=30, y=290, width=150)
 
 config_reset_button = ttk.Button(
     tab3, text="Reset Configuration", command=config_reset_button_callback)
-config_reset_button.place(x=30, y=198)
+config_reset_button.place(x=30, y=260, width=150)
 
 config_test_credential_button = ttk.Button(
     tab3, text="Test Credentials", command=config_test_button_callback)
-config_test_credential_button.place(x=30, y=255)
+config_test_credential_button.place(x=30, y=320, width=150)
 
 config_username_textbox = ttk.Entry(tab3)
 config_username_textbox_default_text = "UserName"
@@ -1882,7 +1838,7 @@ config_username_textbox.bind(
     "<FocusIn>", lambda event, var=config_username_textbox_default_text: textbox_handle_focus_in(event, var))
 config_username_textbox.bind("<FocusOut>", lambda event,
                              var=config_username_textbox_default_text: textbox_handle_focus_out(event, var))
-config_username_textbox.place(x=30, y=100, width=150)
+config_username_textbox.place(x=30, y=105, width=150)
 
 config_domain_textbox = ttk.Entry(tab3)
 config_domain_textbox_default_text = "Domain"
@@ -1896,9 +1852,17 @@ config_domain_textbox.bind("<FocusIn>", lambda event,
                            var=config_domain_textbox_default_text: textbox_handle_focus_in(event, var))
 config_domain_textbox.bind("<FocusOut>", lambda event,
                            var=config_domain_textbox_default_text: textbox_handle_focus_out(event, var))
-config_domain_textbox.place(x=30, y=125, width=150)
+config_domain_textbox.place(x=30, y=165, width=150)
 
 # Create Labels
+
+config_username_label = ttk.Label(tab3, text="Username")
+config_username_label.place(x=30, y=80)
+
+config_domain_label = ttk.Label(tab3, text="Domain")
+config_domain_label.place(x=30, y=140)
+
+
 config_conserver_label = ttk.Label(tab3, text="Connection Server")
 config_conserver_label.place(x=30, y=20)
 
@@ -1906,11 +1870,11 @@ config_pod_label = ttk.Label(tab3, text="Pod")
 config_pod_label.place(x=270, y=20)
 
 config_status_label = ttk.Label(tab3, text="Status: N/A")
-config_status_label.place(x=30, y=290)
+config_status_label.place(x=30, y=370, width=300)
 
 # Create ComboBoxes
 config_pod_combobox = ttk.Combobox(tab3)
-config_pod_combobox.place(x=270, y=50, width=200)
+config_pod_combobox.place(x=270, y=45, width=200)
 config_pod_combobox_default_text = "Test the connection first"
 if len(config_pods) >= 1:
     config_pod_combobox['values'] = config_pods
@@ -1920,7 +1884,7 @@ else:
     config_pod_combobox.state(["disabled"])
 
 config_conserver_combobox = ttk.Combobox(tab3)
-config_conserver_combobox.place(x=30, y=50, width=200)
+config_conserver_combobox.place(x=30, y=45, width=200)
 config_conserver_combobox_default_text = "Enter Connectionserver DNS"
 if len(config_pods) >= 1:
     config_pod_combobox_callback()
@@ -1935,7 +1899,7 @@ config_conserver_combobox.bind(
 config_save_password_checkbox_var = tk.BooleanVar()
 config_save_password_checkbox = ttk.Checkbutton(
     tab3, text="Save Password", variable=config_save_password_checkbox_var, command=config_save_password_checkbox_callback)
-config_save_password_checkbox.place(x=30, y=175)
+config_save_password_checkbox.place(x=30, y=235)
 config_save_password_checkbox_var.set(config_save_password)
 
 # endregion
