@@ -2,7 +2,7 @@ import json
 import requests
 import urllib
 import time
-from typing import get_args
+# from typing import get_args
 
 
 class Connection:

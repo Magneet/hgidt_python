@@ -11,7 +11,7 @@ import threading
 import time
 import sys
 import math
-import loguru
+# import loguru
 from ttkthemes import ThemedTk
 from loguru import logger
 

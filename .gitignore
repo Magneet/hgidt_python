@@ -1,3 +1,5 @@
 build
 dist
 __pycache_
+.venv
+hgidt_config.ini
