@@ -22,8 +22,10 @@ application_name = "hgidt"
 requests.packages.urllib3.disable_warnings()
 # region arguments and logging
 
-logger.add('hgidt.log', retention="10 days", rotation="50 MB",
-           format="{time:YYYY-MM-DD at HH:mm:ss} {level} {message}", level="INFO", enqueue=True, backtrace=True, diagnose=True, catch=True)
+_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
+_log_handler_id = logger.add('hgidt.log', retention="10 days", rotation="50 MB",
+                             format="{time:YYYY-MM-DD at HH:mm:ss} {level} {message}",
+                             level="INFO", enqueue=True, backtrace=True, diagnose=True, catch=True)
 
 
 # endregion
@@ -42,17 +44,26 @@ if 'UserInfo' in config:
     config_domain = config.get('UserInfo', 'Domain')
     config_server_name = config.get('UserInfo', 'ServerName')
     config_save_password = config.getboolean('UserInfo', 'Save_Password')
+    config_log_level = config.get('UserInfo', 'Log_Level', fallback='INFO')
     try:
         config_password = keyring.get_password(
             application_name, config_username)
-        logger.info("Password retreived from credentials store")
+        logger.info("Password retrieved from credentials store")
     except keyring.errors.PasswordDeleteError:
-        logger.error("Password not found or could not be retreived")
+        logger.error("Password not found or could not be retrieved")
 else:
     config_username = None
     config_domain = None
     config_server_name = None
     config_save_password = False
+    config_log_level = 'INFO'
+
+if config_log_level != 'INFO':
+    logger.remove(_log_handler_id)
+    _log_handler_id = logger.add('hgidt.log', retention="10 days", rotation="50 MB",
+                                 format="{time:YYYY-MM-DD at HH:mm:ss} {level} {message}",
+                                 level=config_log_level, enqueue=True, backtrace=True,
+                                 diagnose=True, catch=True)
 if 'Pods' in config:
     config_pods_data = config.get('Pods', 'Pods')
     config_pods = ast.literal_eval(config_pods_data)
@@ -135,6 +146,7 @@ def VDI_Secondary_Machine_Options_Combobox_callback(event):
 
 def VDI_Apply_Secondary_Image_button_callback():
     global global_vdi_selected_pool, global_vdi_selected_vm, hvconnectionobj
+    logger.info(f"Applying secondary image to VDI pool '{global_vdi_selected_pool.get('name')}' using method: {VDI_Secondary_Machine_Options_Combobox_var.get()}")
     if VDI_Secondary_Machine_Options_Combobox_var.get() != VDI_Secondary_Machine_Options_Combobox_default_value:
         pod = global_vdi_selected_pool["pod"]
         hvconnectionobj = connect_pod(pod=pod)
@@ -181,6 +193,7 @@ def VDI_Apply_Secondary_Image_button_callback():
 
 def VDI_Cancel_Secondary_Image_button_callback():
     global global_vdi_selected_pool
+    logger.info(f"Cancelling image push for VDI pool '{global_vdi_selected_pool.get('name')}'")
     _vdi_disable_all_controls()
     hvconnectionobj = connect_pod(pod=global_vdi_selected_pool["pod"])
     horizon_inventory = horizon_functions.Inventory(
@@ -192,6 +205,8 @@ def VDI_Cancel_Secondary_Image_button_callback():
 
 def VDI_Promote_Secondary_Image_button_callback():
     global global_vdi_selected_pool
+    logger.info(f"Promoting secondary image for VDI pool '{global_vdi_selected_pool.get('name')}'")
+
     _vdi_disable_all_controls()
     hvconnectionobj = connect_pod(pod=global_vdi_selected_pool["pod"])
     horizon_inventory = horizon_functions.Inventory(
@@ -203,10 +218,14 @@ def VDI_Promote_Secondary_Image_button_callback():
 
 def VDI_Apply_Golden_Image_button_callback():
     global global_vdi_selected_pool, global_vdi_selected_vm, global_vdi_selected_vm, hvconnectionobj, VDI_vtpm_checkbox_var, VDI_hour_spin, VDI_minute_spin, VDI_cal
+    logger.info(f"Deploying golden image to VDI pool '{global_vdi_selected_pool.get('name')}': "
+                f"VM='{global_vdi_selected_vm.get('name')}' snapshot='{global_VDI_selected_snapshot.get('name')}' "
+                f"vTPM={VDI_vtpm_checkbox_var.get()} logoff={VDI_LofOffPolicy_Combobox_var.get()}")
     if VDI_Enable_datetimepicker_checkbox_var.get() == True:
         datetime_var = get_selected_datetime(
             VDI_cal, VDI_hour_spin, VDI_minute_spin)
         start_time = datetime.timestamp(datetime_var)*1000
+        logger.info(f"VDI deployment scheduled for {datetime_var}")
     else:
         start_time = time.time()
 
@@ -465,6 +484,7 @@ def RDS_Secondary_Machine_Options_Combobox_callback(P):
 
 def RDS_Apply_Secondary_Image_button_callback():
     global global_RDS_selected_farm, global_RDS_selected_vm, hvconnectionobj
+    logger.info(f"Applying secondary image to RDS farm '{global_RDS_selected_farm.get('name')}' using method: {RDS_Secondary_Machine_Options_Combobox_var.get()}")
     if RDS_Secondary_Machine_Options_Combobox_var.get() != RDS_Secondary_Machine_Options_Combobox_default_value:
         pod = global_RDS_selected_farm["pod"]
         hvconnectionobj = connect_pod(pod=pod)
@@ -511,6 +531,7 @@ def RDS_Apply_Secondary_Image_button_callback():
 
 def RDS_Cancel_Secondary_Image_button_callback():
     global global_RDS_selected_farm
+    logger.info(f"Cancelling image push for RDS farm '{global_RDS_selected_farm.get('name')}'")
     _rds_disable_all_controls()
     hvconnectionobj = connect_pod(pod=global_RDS_selected_farm["pod"])
     horizon_inventory = horizon_functions.Inventory(
@@ -522,6 +543,7 @@ def RDS_Cancel_Secondary_Image_button_callback():
 
 def RDS_Promote_Secondary_Image_button_callback():
     global global_RDS_selected_farm
+    logger.info(f"Promoting secondary image for RDS farm '{global_RDS_selected_farm.get('name')}'")
     _rds_disable_all_controls()
     hvconnectionobj = connect_pod(pod=global_RDS_selected_farm["pod"])
     horizon_inventory = horizon_functions.Inventory(
@@ -533,10 +555,14 @@ def RDS_Promote_Secondary_Image_button_callback():
 
 def RDS_Apply_Golden_Image_button_callback():
     global global_RDS_selected_farm, global_RDS_selected_vm, global_RDS_selected_vm, hvconnectionobj, RDS_hour_spin, RDS_minute_spin, RDS_cal
+    logger.info(f"Deploying golden image to RDS farm '{global_RDS_selected_farm.get('name')}': "
+                f"VM='{global_RDS_selected_vm.get('name')}' snapshot='{global_RDS_selected_snapshot.get('name')}' "
+                f"logoff={RDS_LofOffPolicy_Combobox_var.get()}")
     if RDS_Enable_datetimepicker_checkbox_var.get() == True:
         datetime_var = get_selected_datetime(
             RDS_cal, RDS_hour_spin, RDS_minute_spin)
         next_scheduled_time = datetime.timestamp(datetime_var)*1000
+        logger.info(f"RDS deployment scheduled for {datetime_var}")
     else:
         next_scheduled_time = time.time()
 
@@ -801,6 +827,17 @@ def config_save_password_checkbox_callback():
         config_save_button_callback()
 
 
+def config_loglevel_combobox_callback(event):
+    global _log_handler_id, config_log_level
+    config_log_level = config_loglevel_combobox.get()
+    logger.remove(_log_handler_id)
+    _log_handler_id = logger.add('hgidt.log', retention="10 days", rotation="50 MB",
+                                 format="{time:YYYY-MM-DD at HH:mm:ss} {level} {message}",
+                                 level=config_log_level, enqueue=True, backtrace=True,
+                                 diagnose=True, catch=True)
+    logger.info(f"Log level changed to {config_log_level}")
+
+
 def config_pod_combobox_callback():
     global config_server_name
     config_conserver_combobox.config(foreground='black')
@@ -833,7 +870,8 @@ def config_save_button_callback():
         config = configparser.ConfigParser()
         try:
             config['UserInfo'] = {'Username': config_username, 'Domain': config_domain,
-                                  'ServerName': config_server_name, 'Save_Password': str(config_save_password_checkbox_var.get())}
+                                  'ServerName': config_server_name, 'Save_Password': str(config_save_password_checkbox_var.get()),
+                                  'Log_Level': config_log_level}
             config['Pods'] = {'Pods': config_pods}
             config['Connection_Servers'] = {
                 'Connection_Servers': config_connection_servers}
@@ -885,6 +923,8 @@ def config_reset_button_callback():
         config.write(configfile)
     if os.path.exists(CONFIG_FILE):
         os.remove(CONFIG_FILE)
+    config_loglevel_combobox.set('INFO')
+    config_loglevel_combobox.event_generate("<<ComboboxSelected>>")
     config_status_label.config(
         text="Configuration reset and configuration file deleted.")
     logger.info("Configuration reset")
@@ -1648,6 +1688,15 @@ config_conserver_label.place(x=30, y=20)
 
 config_pod_label = ttk.Label(tab3, text="Pod")
 config_pod_label.place(x=270, y=20)
+
+config_loglevel_label = ttk.Label(tab3, text="Log Level")
+config_loglevel_label.place(x=270, y=80)
+
+config_loglevel_combobox = ttk.Combobox(
+    tab3, state="readonly", values=_LOG_LEVELS)
+config_loglevel_combobox.set(config_log_level)
+config_loglevel_combobox.place(x=270, y=105, width=120)
+config_loglevel_combobox.bind("<<ComboboxSelected>>", config_loglevel_combobox_callback)
 
 config_status_label = ttk.Label(tab3, text="Status: N/A")
 config_status_label.place(x=30, y=370, width=300)

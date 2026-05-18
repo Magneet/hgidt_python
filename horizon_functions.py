@@ -2,6 +2,7 @@ import json
 import requests
 import urllib
 import time
+from loguru import logger
 
 REQUEST_TIMEOUT = 30
 _MAX_RETRIES = 5
@@ -13,11 +14,13 @@ def _make_request(func, url: str, **kwargs) -> requests.Response:
     Reads X-Rate-Limit-Retry-After-Seconds from the response header to
     determine how long to wait before each retry.
     """
+    logger.debug(f"[{func.__name__}] {url}")
     for _ in range(_MAX_RETRIES):
         response = func(url, **kwargs)
         if response.status_code != 429:
             return response
         retry_after = int(response.headers.get('X-Rate-Limit-Retry-After-Seconds', 5))
+        logger.warning(f"Rate limited (429), retrying after {retry_after}s: {url}")
         time.sleep(retry_after)
     return response
 
@@ -44,6 +47,7 @@ def _check_response(response: requests.Response, ok_status: int = 200) -> None:
         msg = response.json().get("error_message") or response.reason
     except Exception:
         pass
+    logger.error(f"API error {response.status_code} for {response.url}: {msg}")
     raise Exception(f"Error {response.status_code}: {msg}")
 
 
@@ -61,6 +65,7 @@ class Connection:
 
     def hv_connect(self):
         """Used to authenticate to the VMware Horizon REST API's"""
+        logger.info(f"Connecting to {self.url}")
         headers = {
             'accept': '*/*',
             'Content-Type': 'application/json',
@@ -76,10 +81,12 @@ class Connection:
             'Authorization': 'Bearer ' + data['access_token']
         }
         self.refresh_token = data['refresh_token']
+        logger.debug(f"Connected successfully to {self.url}")
         return self
 
     def hv_disconnect(self):
         """"Used to close close the connection with the VMware Horizon REST API's"""
+        logger.debug(f"Disconnecting from {self.url}")
         headers = {
             'accept': '*/*',
             'Content-Type': 'application/json',
