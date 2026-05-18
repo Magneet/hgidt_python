@@ -1,0 +1,6 @@
+requests
+keyring
+tkcalendar
+ttkthemes
+loguru
+pyinstaller
