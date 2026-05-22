@@ -1,25 +1,27 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-
-block_cipher = None
-
-
 a = Analysis(
     ['horizon_golden_image_deployment_tool.py'],
     pathex=[],
     binaries=[],
     datas=[('logo.ico', '.')],
-    hiddenimports=['requests,tkcalendar,horizon_functions.py,tkinter.tk,tkinter.ttk,tkinter,tkcalendar.dateentry,datetime.datetime,datetime.time,datetime.time,babel.dates,babel.core,babel.localedata,babel.numbers,loguru'],
+    hiddenimports=[
+        'requests',
+        'horizon_functions',
+        'horizon_app',
+        'keyring',
+        'loguru',
+        'PySide6.QtWidgets',
+        'PySide6.QtCore',
+        'PySide6.QtGui',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,

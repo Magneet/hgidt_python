@@ -1,6 +1,5 @@
 requests
 keyring
-tkcalendar
-ttkthemes
+PySide6
 loguru
 pyinstaller
