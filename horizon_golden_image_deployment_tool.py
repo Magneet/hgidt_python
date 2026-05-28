@@ -46,6 +46,7 @@ if 'UserInfo' in config:
     config_server_name = config.get('UserInfo', 'ServerName')
     config_save_password = config.getboolean('UserInfo', 'Save_Password')
     config_log_level = config.get('UserInfo', 'Log_Level', fallback='INFO')
+    config_refresh_vms_snapshots = config.getboolean('UserInfo', 'Refresh_VMs_Snapshots', fallback=False)
     try:
         config_password = keyring.get_password(
             application_name, config_username)
@@ -58,6 +59,7 @@ else:
     config_server_name = None
     config_save_password = False
     config_log_level = 'INFO'
+    config_refresh_vms_snapshots = False
 
 if config_log_level != 'INFO':
     logger.remove(_log_handler_id)
@@ -928,7 +930,8 @@ def config_save_button_callback():
         try:
             config['UserInfo'] = {'Username': config_username, 'Domain': config_domain,
                                   'ServerName': config_server_name, 'Save_Password': str(config_save_password_checkbox.isChecked()),
-                                  'Log_Level': config_log_level}
+                                  'Log_Level': config_log_level,
+                                  'Refresh_VMs_Snapshots': str(config_refresh_vms_snapshots_checkbox.isChecked())}
             config['Pods'] = {'Pods': config_pods}
             config['Connection_Servers'] = {
                 'Connection_Servers': config_connection_servers}
@@ -1047,11 +1050,16 @@ class ConnectWorker(QThread):
     status_updated = Signal(str)
     data_loaded = Signal(dict)
 
+    def __init__(self, include_vms_snapshots=True):
+        super().__init__()
+        self._include_vms_snapshots = include_vms_snapshots
+
     def run(self):
         data = horizon_app.load_environment_data(
             config_pods, config_connection_servers,
             config_username, config_domain, config_password,
-            on_status=lambda msg: self.status_updated.emit(msg))
+            on_status=lambda msg: self.status_updated.emit(msg),
+            include_vms_snapshots=self._include_vms_snapshots)
         self.data_loaded.emit(data)
 
 
@@ -1077,7 +1085,9 @@ def generic_Connect_Button_callback():
     VDI_Statusbox_Label.setText("Connecting")
     RDS_Statusbox_Label.setText("Connecting")
 
-    _connect_worker = ConnectWorker()
+    is_refresh = VDI_Connect_Button.text() == "Refresh"
+    include_vms = not is_refresh or config_refresh_vms_snapshots_checkbox.isChecked()
+    _connect_worker = ConnectWorker(include_vms_snapshots=include_vms)
     _connect_worker.status_updated.connect(_on_connect_status)
     _connect_worker.data_loaded.connect(_on_connect_finished)
     _connect_worker.start()
@@ -1093,10 +1103,11 @@ def _on_connect_finished(data):
 
     global_desktop_pools = data['desktop_pools']
     global_rds_farms = data['rds_farms']
-    global_base_vms = data['base_vms']
-    global_base_snapshots = data['base_snapshots']
-    global_datacenters = data['datacenters']
-    global_vcenters = data['vcenters']
+    if data.get('include_vms_snapshots', True):
+        global_base_vms = data['base_vms']
+        global_base_snapshots = data['base_snapshots']
+        global_datacenters = data['datacenters']
+        global_vcenters = data['vcenters']
 
     vdi_name_dict_mapping = []
     rds_name_dict_mapping = []
@@ -1521,15 +1532,15 @@ config_get_password_button.setGeometry(30, 200, 150, 25)
 config_get_password_button.clicked.connect(show_password_dialog)
 
 config_reset_button = QPushButton("Reset Configuration", tab3)
-config_reset_button.setGeometry(30, 260, 150, 25)
+config_reset_button.setGeometry(30, 293, 150, 25)
 config_reset_button.clicked.connect(config_reset_button_callback)
 
 config_save_button = QPushButton("Save Configuration", tab3)
-config_save_button.setGeometry(30, 290, 150, 25)
+config_save_button.setGeometry(30, 323, 150, 25)
 config_save_button.clicked.connect(config_save_button_callback)
 
 config_test_credential_button = QPushButton("Test Credentials", tab3)
-config_test_credential_button.setGeometry(30, 320, 150, 25)
+config_test_credential_button.setGeometry(30, 353, 150, 25)
 config_test_credential_button.clicked.connect(config_test_button_callback)
 
 # Labels
@@ -1549,7 +1560,7 @@ config_loglevel_label = QLabel("Log Level", tab3)
 config_loglevel_label.setGeometry(270, 80, 150, 20)
 
 config_status_label = QLabel("Status: N/A", tab3)
-config_status_label.setGeometry(30, 370, 400, 20)
+config_status_label.setGeometry(30, 400, 400, 20)
 
 # Text inputs
 config_username_textbox = QLineEdit(tab3)
@@ -1590,13 +1601,19 @@ if len(config_pods) >= 1:
 config_conserver_combobox.currentTextChanged.connect(
     lambda _: config_conserver_combobox_callback())
 
-# Checkbox
+# Checkboxes
 config_save_password_checkbox = QCheckBox("Save Password", tab3)
 config_save_password_checkbox.move(30, 235)
 config_save_password_checkbox.adjustSize()
 config_save_password_checkbox.setChecked(config_save_password)
 config_save_password_checkbox.toggled.connect(
     lambda _: config_save_password_checkbox_callback())
+
+config_refresh_vms_snapshots_checkbox = QCheckBox("Refresh Golden Images & Snapshots on Refresh", tab3)
+config_refresh_vms_snapshots_checkbox.move(30, 263)
+config_refresh_vms_snapshots_checkbox.adjustSize()
+config_refresh_vms_snapshots_checkbox.setChecked(config_refresh_vms_snapshots)
+config_refresh_vms_snapshots_checkbox.toggled.connect(config_save_button_callback)
 
 # endregion
 

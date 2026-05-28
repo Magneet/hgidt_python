@@ -90,12 +90,13 @@ def _fetch_vm_snapshots(args):
     return basevm, snaps
 
 
-def load_environment_data(pods, connection_servers, username, domain, password, on_status=None):
+def load_environment_data(pods, connection_servers, username, domain, password, on_status=None, include_vms_snapshots=True):
     """Load all Horizon environment data needed by the UI.
 
     Returns a dict with keys: desktop_pools, rds_farms, base_vms,
-    base_snapshots, datacenters, vcenters.
+    base_snapshots, datacenters, vcenters, include_vms_snapshots.
     on_status(message) is called with progress strings when provided.
+    When include_vms_snapshots is False, only pools and farms are fetched.
     """
     desktop_pools = []
     rds_farms = []
@@ -146,44 +147,47 @@ def load_environment_data(pods, connection_servers, username, domain, password, 
                 logger.info(f'Found Farm: {farm["name"]}')
                 rds_farms.append(farm)
 
-            logger.info("Getting vCenters")
-            pod_vcenters = config.get_virtual_centers()
-            for vcenter in pod_vcenters:
-                vcenter['pod'] = pod
-                logger.info(f'Found vCenter: {vcenter["server_name"]}')
+            if include_vms_snapshots:
+                logger.info("Getting vCenters")
+                pod_vcenters = config.get_virtual_centers()
+                for vcenter in pod_vcenters:
+                    vcenter['pod'] = pod
+                    logger.info(f'Found vCenter: {vcenter["server_name"]}')
 
-                pod_datacenters = external.get_datacenters(vcenter_id=vcenter['id'])
-                for datacenter in pod_datacenters:
-                    datacenter['pod'] = pod
-                    logger.info(f'Found Datacenter {datacenter["name"]}')
+                    pod_datacenters = external.get_datacenters(vcenter_id=vcenter['id'])
+                    for datacenter in pod_datacenters:
+                        datacenter['pod'] = pod
+                        logger.info(f'Found Datacenter {datacenter["name"]}')
 
-                    raw_vms = external.get_base_vms(
-                        vcenter_id=vcenter['id'],
-                        datacenter_id=datacenter['id'],
-                        filter_incompatible_vms=True)
-                    if not isinstance(raw_vms, list):
-                        raw_vms = [raw_vms]
-                    for vm in raw_vms:
-                        if 'incompatible_reasons' not in vm:
-                            vm['incompatible_reasons'] = []
-                        vm['pod'] = pod
+                        raw_vms = external.get_base_vms(
+                            vcenter_id=vcenter['id'],
+                            datacenter_id=datacenter['id'],
+                            filter_incompatible_vms=True)
+                        if not isinstance(raw_vms, list):
+                            raw_vms = [raw_vms]
+                        for vm in raw_vms:
+                            if 'incompatible_reasons' not in vm:
+                                vm['incompatible_reasons'] = []
+                            vm['pod'] = pod
 
-                    logger.info(f"Fetching snapshots for {len(raw_vms)} VMs in parallel")
-                    if on_status:
-                        on_status(f"Fetching snapshots for {len(raw_vms)} VMs in {datacenter['name']}")
+                        logger.info(f"Fetching snapshots for {len(raw_vms)} VMs in parallel")
+                        if on_status:
+                            on_status(f"Fetching snapshots for {len(raw_vms)} VMs in {datacenter['name']}")
 
-                    args = [(vm, external, vcenter['id']) for vm in raw_vms]
-                    with ThreadPoolExecutor(max_workers=5) as executor:
-                        results = list(executor.map(_fetch_vm_snapshots, args))
+                        args = [(vm, external, vcenter['id']) for vm in raw_vms]
+                        with ThreadPoolExecutor(max_workers=5) as executor:
+                            results = list(executor.map(_fetch_vm_snapshots, args))
 
-                    for vm, snaps in results:
-                        if snaps:
-                            base_snapshots.extend(snaps)
-                    base_vms.extend(raw_vms)
-                    logger.info("Done getting Base VMs and snapshots")
+                        for vm, snaps in results:
+                            if snaps:
+                                base_snapshots.extend(snaps)
+                        base_vms.extend(raw_vms)
+                        logger.info("Done getting Base VMs and snapshots")
 
-                datacenters.extend(pod_datacenters)
-            vcenters.extend(pod_vcenters)
+                    datacenters.extend(pod_datacenters)
+                vcenters.extend(pod_vcenters)
+            else:
+                logger.info("Skipping Golden Images & Snapshots refresh (disabled in config)")
 
         finally:
             logger.info(f'Disconnecting from Pod: {pod}')
@@ -196,4 +200,5 @@ def load_environment_data(pods, connection_servers, username, domain, password, 
         'base_snapshots': base_snapshots,
         'datacenters': datacenters,
         'vcenters': vcenters,
+        'include_vms_snapshots': include_vms_snapshots,
     }
