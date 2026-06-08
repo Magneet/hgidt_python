@@ -3,10 +3,12 @@ from loguru import logger
 import horizon_functions
 
 
-def build_pod_info(hvconnectionobj, config_server_name):
+def build_pod_info(hvconnectionobj, config_server_name, local_pod_only=False):
     """Discover pods and connection servers from an active Horizon connection.
 
     Returns (pods, connection_servers) without mutating any globals.
+    When local_pod_only is True the CPA federation API is skipped and only
+    the local pod is discovered.
     """
     federation = horizon_functions.Federation(
         url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
@@ -15,7 +17,10 @@ def build_pod_info(hvconnectionobj, config_server_name):
     monitor = horizon_functions.Monitor(
         url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
 
-    cpa_status = federation.get_cloud_pod_federation()['connection_server_statuses'][0]['status']
+    if local_pod_only:
+        cpa_status = "DISABLED"
+    else:
+        cpa_status = federation.get_cloud_pod_federation()['connection_server_statuses'][0]['status']
     pods = []
     connection_servers = []
 

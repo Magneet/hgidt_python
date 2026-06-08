@@ -47,6 +47,7 @@ if 'UserInfo' in config:
     config_save_password = config.getboolean('UserInfo', 'Save_Password')
     config_log_level = config.get('UserInfo', 'Log_Level', fallback='INFO')
     config_refresh_vms_snapshots = config.getboolean('UserInfo', 'Refresh_VMs_Snapshots', fallback=False)
+    config_local_pod_only = config.getboolean('UserInfo', 'Local_Pod_Only', fallback=False)
     try:
         config_password = keyring.get_password(
             application_name, config_username)
@@ -60,6 +61,7 @@ else:
     config_save_password = False
     config_log_level = 'INFO'
     config_refresh_vms_snapshots = False
+    config_local_pod_only = False
 
 if config_log_level != 'INFO':
     logger.remove(_log_handler_id)
@@ -94,6 +96,8 @@ while current_memory <= memory_end_value:
 logo_image = "logo.ico"
 _config_test_worker = None
 _connect_worker = None
+_vdi_action_worker = None
+_rds_action_worker = None
 
 global_desktop_pools = []
 global_rds_farms = []
@@ -139,7 +143,7 @@ RDS_secondary_image_machine_count_label_default = "Count / %"
 
 
 def build_pod_info(hvconnectionobj):
-    pods, servers = horizon_app.build_pod_info(hvconnectionobj, config_server_name)
+    pods, servers = horizon_app.build_pod_info(hvconnectionobj, config_server_name, local_pod_only=config_local_pod_only)
     config_pods.clear()
     config_pods.extend(pods)
     config_connection_servers.clear()
@@ -185,76 +189,78 @@ def VDI_Secondary_Machine_Options_Combobox_callback(event):
 
 
 def VDI_Apply_Secondary_Image_button_callback():
-    global global_vdi_selected_pool, global_vdi_selected_vm, hvconnectionobj
-    logger.info(f"Applying secondary image to VDI pool '{global_vdi_selected_pool.get('name')}' using method: {VDI_Secondary_Machine_Options_Combobox.currentText()}")
-    if VDI_Secondary_Machine_Options_Combobox.currentText() != VDI_Secondary_Machine_Options_Combobox_default_value:
-        pod = global_vdi_selected_pool["pod"]
-        hvconnectionobj = connect_pod(pod=pod)
-        horizon_inventory = horizon_functions.Inventory(
-            url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-        pool_id = global_vdi_selected_pool['id']
-        selected_machine_count = int(VDI_machinecount_textbox.text())
-        machinefilter = {}
-        machinefilter["type"] = "Equals"
-        machinefilter["name"] = "desktop_pool_id"
-        machinefilter["value"] = pool_id
-        machines = horizon_inventory.get_machines(filter=machinefilter)
-        machines = sorted(machines, key=lambda x: x["name"])
-        if "Percentage" in VDI_Secondary_Machine_Options_Combobox.currentText():
-            machinecount = len(machines)
-            selected_machine_count = math.ceil(
-                (selected_machine_count / 100) * machinecount)
-            selected_machines = [d for d in machines[:selected_machine_count]]
-            selected_machine_ids = [item["id"] for item in selected_machines if item["managed_machine_data"]["base_vm_snapshot_id"]
-                                    == global_vdi_selected_pool["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
-            unselected_machines = [d for d in machines[selected_machine_count:]]
-            unselected_machine_ids = [item["id"] for item in unselected_machines if item["managed_machine_data"]
-                                      ["base_vm_snapshot_id"] != global_vdi_selected_pool["provisioning_settings"]["base_snapshot_id"]]
-        else:
-            selected_machines = [d for d in machines[:selected_machine_count]]
-            selected_machine_ids = [item["id"] for item in selected_machines if item["managed_machine_data"]["base_vm_snapshot_id"]
-                                    != global_vdi_selected_pool["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
-            unselected_machines = [d for d in machines[selected_machine_count:]]
-            unselected_machine_ids = [item["id"] for item in unselected_machines if item["managed_machine_data"]
-                                      ["base_vm_snapshot_id"] != global_vdi_selected_pool["provisioning_settings"]["base_snapshot_id"]]
-        if len(selected_machine_ids) != 0:
-            horizon_inventory.apply_pending_desktop_pool_image(
-                desktop_pool_id=pool_id, machine_ids=selected_machine_ids, pending_image=True)
-        if len(unselected_machine_ids) != 0:
-            horizon_inventory.apply_pending_desktop_pool_image(
-                desktop_pool_id=pool_id, machine_ids=unselected_machine_ids, pending_image=False)
-        _vdi_disable_all_controls()
-        hvconnectionobj.hv_disconnect()
-    else:
+    global global_vdi_selected_pool, _vdi_action_worker
+    secondary_option = VDI_Secondary_Machine_Options_Combobox.currentText()
+    if secondary_option == VDI_Secondary_Machine_Options_Combobox_default_value:
         VDI_Statusbox_Label.setText("Select a number of machines first.")
+        return
+    logger.info(f"Applying secondary image to VDI pool '{global_vdi_selected_pool.get('name')}' using method: {secondary_option}")
+    pod = global_vdi_selected_pool["pod"]
+    pool_id = global_vdi_selected_pool['id']
+    machine_count = int(VDI_machinecount_textbox.text())
+    is_percentage = "Percentage" in secondary_option
+    pending_snap_id = global_vdi_selected_pool["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]
+    base_snap_id = global_vdi_selected_pool["provisioning_settings"]["base_snapshot_id"]
+    _vdi_disable_all_controls()
+
+    def action():
+        hvconn = connect_pod(pod=pod)
+        inv = horizon_functions.Inventory(url=hvconn.url, access_token=hvconn.access_token)
+        machines = sorted(inv.get_machines(filter={"type": "Equals", "name": "desktop_pool_id", "value": pool_id}),
+                          key=lambda x: x["name"])
+        count = math.ceil((machine_count / 100) * len(machines)) if is_percentage else machine_count
+        selected = machines[:count]
+        unselected = machines[count:]
+        if is_percentage:
+            sel_ids = [m["id"] for m in selected if m["managed_machine_data"]["base_vm_snapshot_id"] == pending_snap_id]
+        else:
+            sel_ids = [m["id"] for m in selected if m["managed_machine_data"]["base_vm_snapshot_id"] != pending_snap_id]
+        unsel_ids = [m["id"] for m in unselected if m["managed_machine_data"]["base_vm_snapshot_id"] != base_snap_id]
+        if sel_ids:
+            inv.apply_pending_desktop_pool_image(desktop_pool_id=pool_id, machine_ids=sel_ids, pending_image=True)
+        if unsel_ids:
+            inv.apply_pending_desktop_pool_image(desktop_pool_id=pool_id, machine_ids=unsel_ids, pending_image=False)
+        hvconn.hv_disconnect()
+
+    _vdi_action_worker = ApiActionWorker(action)
+    _vdi_action_worker.status_updated.connect(VDI_Statusbox_Label.setText)
+    _vdi_action_worker.start()
 
 
 def VDI_Cancel_Secondary_Image_button_callback():
-    global global_vdi_selected_pool
+    global global_vdi_selected_pool, _vdi_action_worker
     logger.info(f"Cancelling image push for VDI pool '{global_vdi_selected_pool.get('name')}'")
+    pod, pool_id = global_vdi_selected_pool["pod"], global_vdi_selected_pool["id"]
     _vdi_disable_all_controls()
-    hvconnectionobj = connect_pod(pod=global_vdi_selected_pool["pod"])
-    horizon_inventory = horizon_functions.Inventory(
-        url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-    horizon_inventory.cancel_desktop_pool_push_image(
-        desktop_pool_id=global_vdi_selected_pool["id"])
-    hvconnectionobj.hv_disconnect()
+
+    def action():
+        hvconn = connect_pod(pod=pod)
+        horizon_functions.Inventory(url=hvconn.url, access_token=hvconn.access_token).cancel_desktop_pool_push_image(desktop_pool_id=pool_id)
+        hvconn.hv_disconnect()
+
+    _vdi_action_worker = ApiActionWorker(action)
+    _vdi_action_worker.status_updated.connect(VDI_Statusbox_Label.setText)
+    _vdi_action_worker.start()
 
 
 def VDI_Promote_Secondary_Image_button_callback():
-    global global_vdi_selected_pool
+    global global_vdi_selected_pool, _vdi_action_worker
     logger.info(f"Promoting secondary image for VDI pool '{global_vdi_selected_pool.get('name')}'")
+    pod, pool_id = global_vdi_selected_pool["pod"], global_vdi_selected_pool["id"]
     _vdi_disable_all_controls()
-    hvconnectionobj = connect_pod(pod=global_vdi_selected_pool["pod"])
-    horizon_inventory = horizon_functions.Inventory(
-        url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-    horizon_inventory.promote_pending_desktop_pool_image(
-        desktop_pool_id=global_vdi_selected_pool["id"])
-    hvconnectionobj.hv_disconnect()
+
+    def action():
+        hvconn = connect_pod(pod=pod)
+        horizon_functions.Inventory(url=hvconn.url, access_token=hvconn.access_token).promote_pending_desktop_pool_image(desktop_pool_id=pool_id)
+        hvconn.hv_disconnect()
+
+    _vdi_action_worker = ApiActionWorker(action)
+    _vdi_action_worker.status_updated.connect(VDI_Statusbox_Label.setText)
+    _vdi_action_worker.start()
 
 
 def VDI_Apply_Golden_Image_button_callback():
-    global global_vdi_selected_pool, global_vdi_selected_vm, hvconnectionobj, VDI_cal
+    global global_vdi_selected_pool, global_vdi_selected_vm, _vdi_action_worker, VDI_cal
     logger.info(f"Deploying golden image to VDI pool '{global_vdi_selected_pool.get('name')}': "
                 f"VM='{global_vdi_selected_vm.get('name')}' snapshot='{global_VDI_selected_snapshot.get('name')}' "
                 f"vTPM={VDI_vtpm_checkbox.isChecked()} logoff={VDI_LofOffPolicy_Combobox.currentText()}")
@@ -266,53 +272,43 @@ def VDI_Apply_Golden_Image_button_callback():
         start_time = time.time()
 
     pod = global_vdi_selected_vm["pod"]
-    hvconnectionobj = connect_pod(pod=pod)
-    horizon_inventory = horizon_functions.Inventory(
-        url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
     pool_id = global_vdi_selected_pool['id']
     parent_vm_id = global_vdi_selected_vm['id']
     snapshot_id = global_VDI_selected_snapshot['id']
-    VDI_Resize_checkbox_selected = VDI_Resize_checkbox.isChecked()
-    VDI_CoresPerSocket_selected = VDI_CoresPerSocket_ComboBox.currentText()
-    VDI_CPUCount_selected = VDI_CPUCount_ComboBox.currentText()
-    VDI_Memory_selected = VDI_Memory_ComboBox.currentText()
-    if VDI_Secondary_Machine_Options_Combobox.currentText() != VDI_Secondary_Machine_Options_Combobox_default_value:
-        selected_machine_count = int(VDI_machinecount_textbox.text())
-        machinefilter = {}
-        machinefilter["type"] = "Equals"
-        machinefilter["name"] = "desktop_pool_id"
-        machinefilter["value"] = pool_id
-        machines = horizon_inventory.get_machines(filter=machinefilter)
-        machines = sorted(machines, key=lambda x: x["name"])
-        if "percent" in VDI_Secondary_Machine_Options_Combobox.currentText().lower():
-            machinecount = len(machines)
-            selected_machine_count = math.ceil(
-                (selected_machine_count / 100) * machinecount)
-            machine_ids = [d["id"] for d in machines[:selected_machine_count]]
-        else:
-            machine_ids = [d["id"] for d in machines[:selected_machine_count]]
-    else:
-        machine_ids = None
-    if VDI_Resize_checkbox_selected and VDI_CoresPerSocket_selected and VDI_CPUCount_selected and VDI_Memory_selected:
-        compute_profile_num_cores_per_socket = VDI_CoresPerSocket_selected
-        compute_profile_num_cpus = VDI_CPUCount_selected
-        compute_profile_ram_mb = VDI_Memory_selected
-    else:
-        compute_profile_num_cores_per_socket = None
-        compute_profile_num_cpus = None
-        compute_profile_ram_mb = None
-
-    horizon_inventory.desktop_pool_push_image(
-        desktop_pool_id=pool_id, parent_vm_id=parent_vm_id, snapshot_id=snapshot_id,
-        machine_ids=machine_ids, compute_profile_ram_mb=compute_profile_ram_mb,
-        compute_profile_num_cpus=compute_profile_num_cpus,
-        compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket,
-        add_virtual_tpm=VDI_vtpm_checkbox.isChecked(),
-        logoff_policy=VDI_LofOffPolicy_Combobox.currentText(),
-        start_time=start_time,
-        selective_push_image=VDI_secondaryimage_checkbox.isChecked())
+    add_vtpm = VDI_vtpm_checkbox.isChecked()
+    logoff_policy = VDI_LofOffPolicy_Combobox.currentText()
+    selective = VDI_secondaryimage_checkbox.isChecked()
+    resize = VDI_Resize_checkbox.isChecked()
+    cores_per_socket = VDI_CoresPerSocket_ComboBox.currentText() if resize else None
+    cpu_count = VDI_CPUCount_ComboBox.currentText() if resize else None
+    ram_mb = VDI_Memory_ComboBox.currentText() if resize else None
+    secondary_option = VDI_Secondary_Machine_Options_Combobox.currentText()
+    machine_count = int(VDI_machinecount_textbox.text()) if secondary_option != VDI_Secondary_Machine_Options_Combobox_default_value else None
+    is_percentage = "percent" in secondary_option.lower()
     _vdi_disable_all_controls()
-    hvconnectionobj.hv_disconnect()
+
+    def action():
+        hvconn = connect_pod(pod=pod)
+        inv = horizon_functions.Inventory(url=hvconn.url, access_token=hvconn.access_token)
+        machine_ids = None
+        if machine_count is not None:
+            machines = sorted(inv.get_machines(filter={"type": "Equals", "name": "desktop_pool_id", "value": pool_id}),
+                              key=lambda x: x["name"])
+            count = math.ceil((machine_count / 100) * len(machines)) if is_percentage else machine_count
+            machine_ids = [d["id"] for d in machines[:count]]
+        inv.desktop_pool_push_image(
+            desktop_pool_id=pool_id, parent_vm_id=parent_vm_id, snapshot_id=snapshot_id,
+            machine_ids=machine_ids,
+            compute_profile_ram_mb=int(ram_mb) if ram_mb else None,
+            compute_profile_num_cpus=int(cpu_count) if cpu_count else None,
+            compute_profile_num_cores_per_socket=int(cores_per_socket) if cores_per_socket else None,
+            add_virtual_tpm=add_vtpm, logoff_policy=logoff_policy,
+            start_time=start_time, selective_push_image=selective)
+        hvconn.hv_disconnect()
+
+    _vdi_action_worker = ApiActionWorker(action)
+    _vdi_action_worker.status_updated.connect(VDI_Statusbox_Label.setText)
+    _vdi_action_worker.start()
 
 
 def VDI_DesktopPool_Combobox_callback(event):
@@ -391,6 +387,7 @@ def VDI_DesktopPool_Combobox_callback(event):
         f"Pending Image Progress = {provisioning_progress}"
     )
     VDI_Status_Textblock.setPlainText(vdi_textblock_text)
+    _update_vdi_provisioning_controls()
     if (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "N/A") or \
             (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "FAILED"):
         for vm in global_base_vms:
@@ -415,7 +412,8 @@ def VDI_DesktopPool_Combobox_callback(event):
             return
         logger.debug(f"VDI golden images available for vcenter {vcenter_id}: {[item['name'] for item in optional_golden_images]}")
         VDI_Golden_Image_Combobox_values = {item["name"]: item for item in optional_golden_images}
-        VDI_Golden_Image_Combobox__selected_default = optional_golden_images[0]['name']
+        _current_vm = next((vm for vm in optional_golden_images if vm['id'] == prinary_basevm_id), None)
+        VDI_Golden_Image_Combobox__selected_default = _current_vm['name'] if _current_vm else optional_golden_images[0]['name']
         _vdi_vm_values = list(VDI_Golden_Image_Combobox_values.keys())
         VDI_Golden_Image_Combobox._all_values = _vdi_vm_values
         VDI_Golden_Image_Combobox.blockSignals(True)
@@ -454,7 +452,13 @@ def VDI_Golden_Image_Combobox_callback(event):
                           == vcenter_id and item["basevmid"] == basevm_id
                           and not item.get("incompatible_reasons")]
     VDI_Snapshot_Combobox_values = {item["name"]: item for item in optional_snapshots}
-    VDI_Snapshot_Combobox__selected_default = optional_snapshots[0]['name']
+    _pool_vm_id = global_vdi_selected_pool.get("provisioning_settings", {}).get("parent_vm_id")
+    _pool_snap_id = global_vdi_selected_pool.get("provisioning_settings", {}).get("base_snapshot_id")
+    if global_vdi_selected_vm['id'] == _pool_vm_id and _pool_snap_id:
+        _current_snap = next((s for s in optional_snapshots if s['id'] == _pool_snap_id), None)
+        VDI_Snapshot_Combobox__selected_default = _current_snap['name'] if _current_snap else optional_snapshots[0]['name']
+    else:
+        VDI_Snapshot_Combobox__selected_default = optional_snapshots[0]['name']
     _vdi_snap_values = list(VDI_Snapshot_Combobox_values.keys())
     VDI_Snapshot_Combobox._all_values = _vdi_snap_values
     VDI_Snapshot_Combobox.blockSignals(True)
@@ -505,6 +509,36 @@ def VDI_Resize_checkbox_callback():
 
 def VDI_Enable_datetimepicker_checkbox_callback():
     VDI_cal.setEnabled(VDI_Enable_datetimepicker_checkbox.isChecked())
+
+
+def _update_vdi_provisioning_controls():
+    enabled = global_vdi_selected_pool.get('enable_provisioning', True)
+    VDI_Provisioning_Status_Label.setText(f"Provisioning: {'Enabled' if enabled else 'Disabled'}")
+    VDI_Toggle_Provisioning_button.setText('Disable Provisioning' if enabled else 'Enable Provisioning')
+    VDI_Toggle_Provisioning_button.setEnabled(True)
+
+
+def VDI_Toggle_Provisioning_button_callback():
+    global global_vdi_selected_pool, _vdi_action_worker
+    enable = not global_vdi_selected_pool.get('enable_provisioning', True)
+    logger.info(f"{'Enabling' if enable else 'Disabling'} provisioning for VDI pool '{global_vdi_selected_pool.get('name')}'")
+    pod = global_vdi_selected_pool['pod']
+    pool_data = global_vdi_selected_pool.copy()
+    VDI_Toggle_Provisioning_button.setEnabled(False)
+
+    def action():
+        hvconn = connect_pod(pod=pod)
+        horizon_functions.Inventory(url=hvconn.url, access_token=hvconn.access_token).set_desktop_pool_provisioning(pool_data, enable)
+        hvconn.hv_disconnect()
+
+    def on_finished():
+        global_vdi_selected_pool['enable_provisioning'] = enable
+        _update_vdi_provisioning_controls()
+
+    _vdi_action_worker = ApiActionWorker(action)
+    _vdi_action_worker.status_updated.connect(VDI_Statusbox_Label.setText)
+    _vdi_action_worker.action_finished.connect(on_finished)
+    _vdi_action_worker.start()
 # endregion
 
 
@@ -535,76 +569,78 @@ def RDS_Secondary_Machine_Options_Combobox_callback(event):
 
 
 def RDS_Apply_Secondary_Image_button_callback():
-    global global_RDS_selected_farm, global_RDS_selected_vm, hvconnectionobj
-    logger.info(f"Applying secondary image to RDS farm '{global_RDS_selected_farm.get('name')}' using method: {RDS_Secondary_Machine_Options_Combobox.currentText()}")
-    if RDS_Secondary_Machine_Options_Combobox.currentText() != RDS_Secondary_Machine_Options_Combobox_default_value:
-        pod = global_RDS_selected_farm["pod"]
-        hvconnectionobj = connect_pod(pod=pod)
-        horizon_inventory = horizon_functions.Inventory(
-            url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-        farm_id = global_RDS_selected_farm['id']
-        selected_machine_count = int(RDS_machinecount_textbox.text())
-        rdsmachinefilter = {}
-        rdsmachinefilter["type"] = "Equals"
-        rdsmachinefilter["name"] = "farm_id"
-        rdsmachinefilter["value"] = farm_id
-        machines = horizon_inventory.get_rds_servers(filter=rdsmachinefilter)
-        machines = sorted(machines, key=lambda x: x["name"])
-        if "percent" in RDS_Secondary_Machine_Options_Combobox.currentText().lower():
-            machinecount = len(machines)
-            selected_machine_count = math.ceil(
-                (selected_machine_count / 100) * machinecount)
-            selected_machines = [d for d in machines[:selected_machine_count]]
-            selected_machine_ids = [item["id"] for item in selected_machines if item["base_vm_snapshot_id"] ==
-                                    global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
-            unselected_machines = [d for d in machines[selected_machine_count:]]
-            unselected_machine_ids = [item["id"] for item in unselected_machines if item["base_vm_snapshot_id"]
-                                      != global_RDS_selected_farm["automated_farm_settings"]["provisioning_settings"]["base_snapshot_id"]]
-        else:
-            selected_machines = [d for d in machines[:selected_machine_count]]
-            selected_machine_ids = [item["id"] for item in selected_machines if item["base_vm_snapshot_id"] !=
-                                    global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]]
-            unselected_machines = [d for d in machines[selected_machine_count:]]
-            unselected_machine_ids = [item["id"] for item in unselected_machines if item["base_vm_snapshot_id"]
-                                      != global_RDS_selected_farm["automated_farm_settings"]["provisioning_settings"]["base_snapshot_id"]]
-        if len(selected_machine_ids) != 0:
-            horizon_inventory.apply_pending_rds_farm_image(
-                farm_id=farm_id, machine_ids=selected_machine_ids, pending_image=True)
-        if len(unselected_machine_ids) != 0:
-            horizon_inventory.apply_pending_rds_farm_image(
-                farm_id=farm_id, machine_ids=unselected_machine_ids, pending_image=False)
-        _rds_disable_all_controls()
-        hvconnectionobj.hv_disconnect()
-    else:
+    global global_RDS_selected_farm, _rds_action_worker
+    secondary_option = RDS_Secondary_Machine_Options_Combobox.currentText()
+    if secondary_option == RDS_Secondary_Machine_Options_Combobox_default_value:
         RDS_Statusbox_Label.setText("Select a number of machines first.")
+        return
+    logger.info(f"Applying secondary image to RDS farm '{global_RDS_selected_farm.get('name')}' using method: {secondary_option}")
+    pod = global_RDS_selected_farm["pod"]
+    farm_id = global_RDS_selected_farm['id']
+    machine_count = int(RDS_machinecount_textbox.text())
+    is_percentage = "percent" in secondary_option.lower()
+    pending_snap_id = global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]
+    base_snap_id = global_RDS_selected_farm["automated_farm_settings"]["provisioning_settings"]["base_snapshot_id"]
+    _rds_disable_all_controls()
+
+    def action():
+        hvconn = connect_pod(pod=pod)
+        inv = horizon_functions.Inventory(url=hvconn.url, access_token=hvconn.access_token)
+        machines = sorted(inv.get_rds_servers(filter={"type": "Equals", "name": "farm_id", "value": farm_id}),
+                          key=lambda x: x["name"])
+        count = math.ceil((machine_count / 100) * len(machines)) if is_percentage else machine_count
+        selected = machines[:count]
+        unselected = machines[count:]
+        if is_percentage:
+            sel_ids = [m["id"] for m in selected if m["base_vm_snapshot_id"] == pending_snap_id]
+        else:
+            sel_ids = [m["id"] for m in selected if m["base_vm_snapshot_id"] != pending_snap_id]
+        unsel_ids = [m["id"] for m in unselected if m["base_vm_snapshot_id"] != base_snap_id]
+        if sel_ids:
+            inv.apply_pending_rds_farm_image(farm_id=farm_id, machine_ids=sel_ids, pending_image=True)
+        if unsel_ids:
+            inv.apply_pending_rds_farm_image(farm_id=farm_id, machine_ids=unsel_ids, pending_image=False)
+        hvconn.hv_disconnect()
+
+    _rds_action_worker = ApiActionWorker(action)
+    _rds_action_worker.status_updated.connect(RDS_Statusbox_Label.setText)
+    _rds_action_worker.start()
 
 
 def RDS_Cancel_Secondary_Image_button_callback():
-    global global_RDS_selected_farm
+    global global_RDS_selected_farm, _rds_action_worker
     logger.info(f"Cancelling image push for RDS farm '{global_RDS_selected_farm.get('name')}'")
+    pod, farm_id = global_RDS_selected_farm["pod"], global_RDS_selected_farm["id"]
     _rds_disable_all_controls()
-    hvconnectionobj = connect_pod(pod=global_RDS_selected_farm["pod"])
-    horizon_inventory = horizon_functions.Inventory(
-        url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-    horizon_inventory.cancel_rds_farm_push_image(
-        farm_id=global_RDS_selected_farm["id"])
-    hvconnectionobj.hv_disconnect()
+
+    def action():
+        hvconn = connect_pod(pod=pod)
+        horizon_functions.Inventory(url=hvconn.url, access_token=hvconn.access_token).cancel_rds_farm_push_image(farm_id=farm_id)
+        hvconn.hv_disconnect()
+
+    _rds_action_worker = ApiActionWorker(action)
+    _rds_action_worker.status_updated.connect(RDS_Statusbox_Label.setText)
+    _rds_action_worker.start()
 
 
 def RDS_Promote_Secondary_Image_button_callback():
-    global global_RDS_selected_farm
+    global global_RDS_selected_farm, _rds_action_worker
     logger.info(f"Promoting secondary image for RDS farm '{global_RDS_selected_farm.get('name')}'")
+    pod, farm_id = global_RDS_selected_farm["pod"], global_RDS_selected_farm["id"]
     _rds_disable_all_controls()
-    hvconnectionobj = connect_pod(pod=global_RDS_selected_farm["pod"])
-    horizon_inventory = horizon_functions.Inventory(
-        url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
-    horizon_inventory.promote_pending_rds_farm_image(
-        farm_id=global_RDS_selected_farm["id"])
-    hvconnectionobj.hv_disconnect()
+
+    def action():
+        hvconn = connect_pod(pod=pod)
+        horizon_functions.Inventory(url=hvconn.url, access_token=hvconn.access_token).promote_pending_rds_farm_image(farm_id=farm_id)
+        hvconn.hv_disconnect()
+
+    _rds_action_worker = ApiActionWorker(action)
+    _rds_action_worker.status_updated.connect(RDS_Statusbox_Label.setText)
+    _rds_action_worker.start()
 
 
 def RDS_Apply_Golden_Image_button_callback():
-    global global_RDS_selected_farm, global_RDS_selected_vm, hvconnectionobj, RDS_cal
+    global global_RDS_selected_farm, global_RDS_selected_vm, _rds_action_worker, RDS_cal
     logger.info(f"Deploying golden image to RDS farm '{global_RDS_selected_farm.get('name')}': "
                 f"VM='{global_RDS_selected_vm.get('name')}' snapshot='{global_RDS_selected_snapshot.get('name')}' "
                 f"logoff={RDS_LofOffPolicy_Combobox.currentText()}")
@@ -616,53 +652,42 @@ def RDS_Apply_Golden_Image_button_callback():
         next_scheduled_time = time.time()
 
     pod = global_RDS_selected_vm["pod"]
-    hvconnectionobj = connect_pod(pod=pod)
-    horizon_inventory = horizon_functions.Inventory(
-        url=hvconnectionobj.url, access_token=hvconnectionobj.access_token)
     farm_id = global_RDS_selected_farm['id']
     parent_vm_id = global_RDS_selected_vm['id']
     snapshot_id = global_RDS_selected_snapshot['id']
-    RDS_Resize_checkbox_selected = RDS_Resize_checkbox.isChecked()
-    RDS_CoresPerSocket_selected = RDS_CoresPerSocket_ComboBox.currentText()
-    RDS_CPUCount_selected = RDS_CPUCount_ComboBox.currentText()
-    RDS_Memory_selected = RDS_Memory_ComboBox.currentText()
-    if RDS_Secondary_Machine_Options_Combobox.currentText() != RDS_Secondary_Machine_Options_Combobox_default_value:
-        selected_machine_count = int(RDS_machinecount_textbox.text())
-        machinefilter = {}
-        machinefilter["type"] = "Equals"
-        machinefilter["name"] = "farm_id"
-        machinefilter["value"] = farm_id
-        machines = horizon_inventory.get_rds_servers(filter=machinefilter)
-        machines = sorted(machines, key=lambda x: x["name"])
-        if "percent" in RDS_Secondary_Machine_Options_Combobox.currentText().lower():
-            machinecount = len(machines)
-            selected_machine_count = math.ceil(
-                (selected_machine_count / 100) * machinecount)
-            rds_server_ids = [d["id"] for d in machines[:selected_machine_count]]
-        else:
-            rds_server_ids = [d["id"] for d in machines[:selected_machine_count]]
-    else:
-        rds_server_ids = None
-    if RDS_Resize_checkbox_selected and RDS_CoresPerSocket_selected and RDS_CPUCount_selected and RDS_Memory_selected:
-        compute_profile_num_cores_per_socket = RDS_CoresPerSocket_selected
-        compute_profile_num_cpus = RDS_CPUCount_selected
-        compute_profile_ram_mb = RDS_Memory_selected
-    else:
-        compute_profile_num_cores_per_socket = None
-        compute_profile_num_cpus = None
-        compute_profile_ram_mb = None
-
-    horizon_inventory.rds_farm_schedule_maintenance(
-        farm_id=farm_id, parent_vm_id=parent_vm_id, maintenance_mode="IMMEDIATE",
-        snapshot_id=snapshot_id, rds_server_ids=rds_server_ids,
-        compute_profile_ram_mb=compute_profile_ram_mb,
-        compute_profile_num_cpus=compute_profile_num_cpus,
-        compute_profile_num_cores_per_socket=compute_profile_num_cores_per_socket,
-        logoff_policy=RDS_LofOffPolicy_Combobox.currentText(),
-        next_scheduled_time=next_scheduled_time,
-        selective_schedule_maintenance=RDS_secondaryimage_checkbox.isChecked())
+    logoff_policy = RDS_LofOffPolicy_Combobox.currentText()
+    selective = RDS_secondaryimage_checkbox.isChecked()
+    resize = RDS_Resize_checkbox.isChecked()
+    cores_per_socket = RDS_CoresPerSocket_ComboBox.currentText() if resize else None
+    cpu_count = RDS_CPUCount_ComboBox.currentText() if resize else None
+    ram_mb = RDS_Memory_ComboBox.currentText() if resize else None
+    secondary_option = RDS_Secondary_Machine_Options_Combobox.currentText()
+    machine_count = int(RDS_machinecount_textbox.text()) if secondary_option != RDS_Secondary_Machine_Options_Combobox_default_value else None
+    is_percentage = "percent" in secondary_option.lower()
     _rds_disable_all_controls()
-    hvconnectionobj.hv_disconnect()
+
+    def action():
+        hvconn = connect_pod(pod=pod)
+        inv = horizon_functions.Inventory(url=hvconn.url, access_token=hvconn.access_token)
+        rds_server_ids = None
+        if machine_count is not None:
+            machines = sorted(inv.get_rds_servers(filter={"type": "Equals", "name": "farm_id", "value": farm_id}),
+                              key=lambda x: x["name"])
+            count = math.ceil((machine_count / 100) * len(machines)) if is_percentage else machine_count
+            rds_server_ids = [d["id"] for d in machines[:count]]
+        inv.rds_farm_schedule_maintenance(
+            farm_id=farm_id, parent_vm_id=parent_vm_id, maintenance_mode="IMMEDIATE",
+            snapshot_id=snapshot_id, rds_server_ids=rds_server_ids,
+            compute_profile_ram_mb=int(ram_mb) if ram_mb else None,
+            compute_profile_num_cpus=int(cpu_count) if cpu_count else None,
+            compute_profile_num_cores_per_socket=int(cores_per_socket) if cores_per_socket else None,
+            logoff_policy=logoff_policy, next_scheduled_time=next_scheduled_time,
+            selective_schedule_maintenance=selective)
+        hvconn.hv_disconnect()
+
+    _rds_action_worker = ApiActionWorker(action)
+    _rds_action_worker.status_updated.connect(RDS_Statusbox_Label.setText)
+    _rds_action_worker.start()
 
 
 def RDS_Farm_Combobox_callback(event):
@@ -686,52 +711,40 @@ def RDS_Farm_Combobox_callback(event):
         state = "Enabled"
     else:
         state = "Disabled"
-    if global_RDS_selected_farm["automated_farm_settings"]["enable_provisioning"]:
+    af = global_RDS_selected_farm.get("automated_farm_settings", {})
+    if af.get("enable_provisioning"):
         provisioning_state = "Enabled"
     else:
         provisioning_state = "Disabled"
-    vcenter_id = global_RDS_selected_farm["automated_farm_settings"]['vcenter_id']
-    prinary_basevm_id = global_RDS_selected_farm[
-        "automated_farm_settings"]["provisioning_settings"]["parent_vm_id"]
-    primary_snapshot_id = global_RDS_selected_farm["automated_farm_settings"][
-        "provisioning_settings"]["base_snapshot_id"]
-    try:
-        provisioning_progress = global_RDS_selected_farm["automated_farm_settings"][
-            "provisioning_status_data"]["instant_clone_pending_image_progress"]
-    except:
-        provisioning_progress = "N/A"
+    vcenter_id = af.get('vcenter_id', '')
+    prinary_basevm_id = af.get("provisioning_settings", {}).get("parent_vm_id", '')
+    primary_snapshot_id = af.get("provisioning_settings", {}).get("base_snapshot_id", '')
+    psd = af.get("provisioning_status_data", {})
+    current_image_state = psd.get("instant_clone_current_image_state", "N/A")
+    instant_clone_operation = psd.get("instant_clone_operation", "NONE")
+    instant_clone_pending_image_state = psd.get("instant_clone_pending_image_state", "N/A")
+    provisioning_progress = psd.get("instant_clone_pending_image_progress", "N/A")
     try:
         deployment_time = datetime.fromtimestamp(
-            global_RDS_selected_farm["automated_farm_settings"]["provisioning_status_data"]["instant_clone_push_image_settings"]["start_time"] / 1000)
-    except:
+            psd["instant_clone_push_image_settings"]["start_time"] / 1000)
+    except Exception:
         deployment_time = "N/A"
     _vm_match = [item for item in global_base_vms if item["id"] == prinary_basevm_id]
     primary_basevm_name = _vm_match[0]["name"] if _vm_match else f"Unknown ({prinary_basevm_id})"
     _snap_match = [item for item in global_base_snapshots if item["id"] == primary_snapshot_id]
     primary_basesnapshot_name = _snap_match[0]["name"] if _snap_match else f"Unknown ({primary_snapshot_id})"
     try:
-        secondary_basevm_id = global_RDS_selected_farm["automated_farm_settings"][
-            "provisioning_status_data"]["instant_clone_pending_image_parent_vm_id"]
+        secondary_basevm_id = psd["instant_clone_pending_image_parent_vm_id"]
         secondary_basevm_name = [
             item for item in global_base_vms if item["id"] == secondary_basevm_id][0]["name"]
-    except:
+    except Exception:
         secondary_basevm_name = "N/A"
     try:
-        secondary_snapshot_id = global_RDS_selected_farm["automated_farm_settings"][
-            "provisioning_status_data"]["instant_clone_pending_image_snapshot_id"]
+        secondary_snapshot_id = psd["instant_clone_pending_image_snapshot_id"]
         secondary_basesnapshot_name = [
             item for item in global_base_snapshots if item["id"] == secondary_snapshot_id][0]["name"]
-    except:
+    except Exception:
         secondary_basesnapshot_name = "N/A"
-    current_image_state = global_RDS_selected_farm["automated_farm_settings"][
-        "provisioning_status_data"]["instant_clone_current_image_state"]
-    instant_clone_operation = global_RDS_selected_farm["automated_farm_settings"][
-        "provisioning_status_data"]["instant_clone_operation"]
-    try:
-        instant_clone_pending_image_state = global_RDS_selected_farm["automated_farm_settings"][
-            "provisioning_status_data"]["instant_clone_pending_image_state"]
-    except:
-        instant_clone_pending_image_state = "N/A"
     RDS_textblock_text = (
         f"RDS Farm Status:\nName: {pool_name}\nDisplay Name: {pool_displayname}\n"
         f"Farm State = {state}\nProvisioning State = {provisioning_state}\n"
@@ -743,6 +756,7 @@ def RDS_Farm_Combobox_callback(event):
         f"Pending Image Progress = {provisioning_progress}"
     )
     RDS_Status_Textblock.setPlainText(RDS_textblock_text)
+    _update_rds_provisioning_controls()
     if (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "N/A") or \
             (instant_clone_operation == "NONE" and instant_clone_pending_image_state == "FAILED"):
         for vm in global_base_vms:
@@ -767,7 +781,8 @@ def RDS_Farm_Combobox_callback(event):
             return
         logger.debug(f"RDS golden images available for vcenter {vcenter_id}: {[item['name'] for item in optional_golden_images]}")
         RDS_Golden_Image_Combobox_values = {item["name"]: item for item in optional_golden_images}
-        RDS_Golden_Image_Combobox__selected_default = optional_golden_images[0]['name']
+        _current_vm = next((vm for vm in optional_golden_images if vm['id'] == prinary_basevm_id), None)
+        RDS_Golden_Image_Combobox__selected_default = _current_vm['name'] if _current_vm else optional_golden_images[0]['name']
         _rds_vm_values = list(RDS_Golden_Image_Combobox_values.keys())
         RDS_Golden_Image_Combobox._all_values = _rds_vm_values
         RDS_Golden_Image_Combobox.blockSignals(True)
@@ -806,7 +821,13 @@ def RDS_Golden_Image_Combobox_callback(event):
                           == vcenter_id and item["basevmid"] == basevm_id
                           and not item.get("incompatible_reasons")]
     RDS_Snapshot_Combobox_values = {item["name"]: item for item in optional_snapshots}
-    RDS_Snapshot_Combobox__selected_default = optional_snapshots[0]['name']
+    _farm_vm_id = global_RDS_selected_farm.get("automated_farm_settings", {}).get("provisioning_settings", {}).get("parent_vm_id")
+    _farm_snap_id = global_RDS_selected_farm.get("automated_farm_settings", {}).get("provisioning_settings", {}).get("base_snapshot_id")
+    if global_RDS_selected_vm['id'] == _farm_vm_id and _farm_snap_id:
+        _current_snap = next((s for s in optional_snapshots if s['id'] == _farm_snap_id), None)
+        RDS_Snapshot_Combobox__selected_default = _current_snap['name'] if _current_snap else optional_snapshots[0]['name']
+    else:
+        RDS_Snapshot_Combobox__selected_default = optional_snapshots[0]['name']
     _rds_snap_values = list(RDS_Snapshot_Combobox_values.keys())
     RDS_Snapshot_Combobox._all_values = _rds_snap_values
     RDS_Snapshot_Combobox.blockSignals(True)
@@ -858,6 +879,38 @@ def RDS_Resize_checkbox_callback():
 
 def RDS_Enable_datetimepicker_checkbox_callback():
     RDS_cal.setEnabled(RDS_Enable_datetimepicker_checkbox.isChecked())
+
+
+def _update_rds_provisioning_controls():
+    af = global_RDS_selected_farm.get('automated_farm_settings', {})
+    enabled = af.get('enable_provisioning', True)
+    RDS_Provisioning_Status_Label.setText(f"Provisioning: {'Enabled' if enabled else 'Disabled'}")
+    RDS_Toggle_Provisioning_button.setText('Disable Provisioning' if enabled else 'Enable Provisioning')
+    RDS_Toggle_Provisioning_button.setEnabled(True)
+
+
+def RDS_Toggle_Provisioning_button_callback():
+    global global_RDS_selected_farm, _rds_action_worker
+    af = global_RDS_selected_farm.get('automated_farm_settings', {})
+    enable = not af.get('enable_provisioning', True)
+    logger.info(f"{'Enabling' if enable else 'Disabling'} provisioning for RDS farm '{global_RDS_selected_farm.get('name')}'")
+    pod = global_RDS_selected_farm['pod']
+    farm_data = global_RDS_selected_farm.copy()
+    RDS_Toggle_Provisioning_button.setEnabled(False)
+
+    def action():
+        hvconn = connect_pod(pod=pod)
+        horizon_functions.Inventory(url=hvconn.url, access_token=hvconn.access_token).set_farm_provisioning(farm_data, enable)
+        hvconn.hv_disconnect()
+
+    def on_finished():
+        global_RDS_selected_farm['automated_farm_settings']['enable_provisioning'] = enable
+        _update_rds_provisioning_controls()
+
+    _rds_action_worker = ApiActionWorker(action)
+    _rds_action_worker.status_updated.connect(RDS_Statusbox_Label.setText)
+    _rds_action_worker.action_finished.connect(on_finished)
+    _rds_action_worker.start()
 # endregion
 
 
@@ -918,6 +971,7 @@ def config_save_button_callback():
     global config_username, config_domain, config_server_name, config_password
     config_username = config_username_textbox.text()
     config_domain = config_domain_textbox.text()
+    old_server_name = config_server_name
     config_server_name = config_conserver_combobox.currentText()
     if not config_username or not config_domain or not config_server_name or config_password is None:
         config_username = None
@@ -931,7 +985,8 @@ def config_save_button_callback():
             config['UserInfo'] = {'Username': config_username, 'Domain': config_domain,
                                   'ServerName': config_server_name, 'Save_Password': str(config_save_password_checkbox.isChecked()),
                                   'Log_Level': config_log_level,
-                                  'Refresh_VMs_Snapshots': str(config_refresh_vms_snapshots_checkbox.isChecked())}
+                                  'Refresh_VMs_Snapshots': str(config_refresh_vms_snapshots_checkbox.isChecked()),
+                                  'Local_Pod_Only': str(config_local_pod_only_checkbox.isChecked())}
             config['Pods'] = {'Pods': config_pods}
             config['Connection_Servers'] = {
                 'Connection_Servers': config_connection_servers}
@@ -949,6 +1004,8 @@ def config_save_button_callback():
                     "Password could not be saved to the credentials store")
         config_status_label.setText("Configuration saved")
         logger.info("Configuration saved")
+        if old_server_name != config_server_name and VDI_Connect_Button.text() == "Refresh":
+            _reset_to_disconnected_state()
 
 
 def config_reset_button_callback():
@@ -1061,6 +1118,23 @@ class ConnectWorker(QThread):
             on_status=lambda msg: self.status_updated.emit(msg),
             include_vms_snapshots=self._include_vms_snapshots)
         self.data_loaded.emit(data)
+
+
+class ApiActionWorker(QThread):
+    status_updated = Signal(str)
+    action_finished = Signal()
+
+    def __init__(self, action_fn):
+        super().__init__()
+        self._action_fn = action_fn
+
+    def run(self):
+        try:
+            self._action_fn()
+        except Exception as e:
+            logger.error(f"Action failed: {e}")
+            self.status_updated.emit(str(e))
+        self.action_finished.emit()
 
 
 def generic_Connect_Button_callback():
@@ -1184,6 +1258,53 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
+def _reset_to_disconnected_state():
+    global global_desktop_pools, global_rds_farms, global_base_vms, global_base_snapshots
+    global global_datacenters, global_vcenters
+    global global_vdi_selected_pool, global_vdi_selected_vm, global_VDI_selected_snapshot
+    global global_RDS_selected_farm, global_RDS_selected_vm, global_RDS_selected_snapshot
+    global VDI_DesktopPool_Combobox_values, VDI_Golden_Image_Combobox_values, VDI_Snapshot_Combobox_values
+    global RDS_Farm_Combobox_values, RDS_Golden_Image_Combobox_values, RDS_Snapshot_Combobox_values
+
+    global_desktop_pools.clear()
+    global_rds_farms.clear()
+    global_base_vms.clear()
+    global_base_snapshots.clear()
+    global_datacenters.clear()
+    global_vcenters.clear()
+    global_vdi_selected_pool = {}
+    global_vdi_selected_vm = {}
+    global_VDI_selected_snapshot = {}
+    global_RDS_selected_farm = {}
+    global_RDS_selected_vm = {}
+    global_RDS_selected_snapshot = {}
+    VDI_DesktopPool_Combobox_values = {}
+    VDI_Golden_Image_Combobox_values = {}
+    VDI_Snapshot_Combobox_values = {}
+    RDS_Farm_Combobox_values = {}
+    RDS_Golden_Image_Combobox_values = {}
+    RDS_Snapshot_Combobox_values = {}
+
+    for cb in (VDI_DesktopPool_Combobox, VDI_Golden_Image_Combobox, VDI_Snapshot_Combobox,
+               RDS_Farm_Combobox, RDS_Golden_Image_Combobox, RDS_Snapshot_Combobox):
+        cb.blockSignals(True)
+        cb.clear()
+        cb.blockSignals(False)
+
+    _vdi_disable_all_controls()
+    _rds_disable_all_controls()
+
+    VDI_Connect_Button.setText("Connect")
+    VDI_Connect_Button.setEnabled(True)
+    RDS_Connect_Button.setText("Connect")
+    RDS_Connect_Button.setEnabled(True)
+
+    VDI_Statusbox_Label.setText("")
+    RDS_Statusbox_Label.setText("")
+    VDI_Provisioning_Status_Label.setText("Provisioning: N/A")
+    RDS_Provisioning_Status_Label.setText("Provisioning: N/A")
+
+
 def _vdi_disable_all_controls():
     for widget in (
         VDI_Secondary_Machine_Options_Combobox, VDI_machinecount_textbox,
@@ -1193,6 +1314,7 @@ def _vdi_disable_all_controls():
         VDI_Golden_Image_Combobox, VDI_Snapshot_Combobox, VDI_vtpm_checkbox,
         VDI_LofOffPolicy_Combobox, VDI_Resize_checkbox, VDI_StopOnError_checkbox,
         VDI_secondaryimage_checkbox, VDI_CoresPerSocket_ComboBox, VDI_Memory_ComboBox,
+        VDI_Toggle_Provisioning_button,
     ):
         widget.setEnabled(False)
 
@@ -1206,6 +1328,7 @@ def _rds_disable_all_controls():
         RDS_Golden_Image_Combobox, RDS_Snapshot_Combobox,
         RDS_LofOffPolicy_Combobox, RDS_Resize_checkbox, RDS_StopOnError_checkbox,
         RDS_secondaryimage_checkbox, RDS_CoresPerSocket_ComboBox, RDS_Memory_ComboBox,
+        RDS_Toggle_Provisioning_button,
     ):
         widget.setEnabled(False)
 
@@ -1240,7 +1363,7 @@ window = QMainWindow()
 window.setWindowTitle("Horizon Golden Image Deployment Tool")
 iconPath = resource_path(logo_image)
 window.setWindowIcon(QIcon(iconPath))
-window.setFixedSize(950, 470)
+window.setFixedSize(1100, 470)
 
 tab_widget = QTabWidget()
 window.setCentralWidget(tab_widget)
@@ -1273,7 +1396,7 @@ VDI_Golden_Image_Combobox = QComboBox(tab1)
 VDI_Golden_Image_Combobox.setGeometry(10, 120, 360, 25)
 VDI_Golden_Image_Combobox.setEnabled(False)
 bind_combobox_search(VDI_Golden_Image_Combobox)
-VDI_Golden_Image_Combobox.currentIndexChanged.connect(
+VDI_Golden_Image_Combobox.activated.connect(
     lambda _: VDI_Golden_Image_Combobox_callback(None))
 
 QLabel("Snapshot", tab1).setGeometry(10, 155, 180, 20)
@@ -1360,29 +1483,38 @@ VDI_cal.setEnabled(False)
 
 # Action buttons
 VDI_Apply_Golden_Image_button = QPushButton("Apply Image", tab1)
-VDI_Apply_Golden_Image_button.setGeometry(10, 385, 120, 25)
+VDI_Apply_Golden_Image_button.setGeometry(10, 400, 120, 25)
 VDI_Apply_Golden_Image_button.setEnabled(False)
 VDI_Apply_Golden_Image_button.clicked.connect(VDI_Apply_Golden_Image_button_callback)
 
 VDI_Cancel_Secondary_Image_button = QPushButton("Cancel Image", tab1)
-VDI_Cancel_Secondary_Image_button.setGeometry(140, 385, 120, 25)
+VDI_Cancel_Secondary_Image_button.setGeometry(140, 400, 120, 25)
 VDI_Cancel_Secondary_Image_button.setEnabled(False)
 VDI_Cancel_Secondary_Image_button.clicked.connect(VDI_Cancel_Secondary_Image_button_callback)
 
 VDI_Promote_Secondary_Image_button = QPushButton("Promote Image", tab1)
-VDI_Promote_Secondary_Image_button.setGeometry(270, 385, 120, 25)
+VDI_Promote_Secondary_Image_button.setGeometry(270, 400, 120, 25)
 VDI_Promote_Secondary_Image_button.setEnabled(False)
 VDI_Promote_Secondary_Image_button.clicked.connect(VDI_Promote_Secondary_Image_button_callback)
 
 VDI_Apply_Secondary_Image_button = QPushButton("Apply Secondary", tab1)
-VDI_Apply_Secondary_Image_button.setGeometry(400, 385, 120, 25)
+VDI_Apply_Secondary_Image_button.setGeometry(400, 400, 120, 25)
 VDI_Apply_Secondary_Image_button.setEnabled(False)
 VDI_Apply_Secondary_Image_button.clicked.connect(VDI_Apply_Secondary_Image_button_callback)
 
 # Status textblock (right side)
 VDI_Status_Textblock = QPlainTextEdit(tab1)
-VDI_Status_Textblock.setGeometry(545, 10, 390, 395)
+VDI_Status_Textblock.setGeometry(545, 10, 540, 355)
 VDI_Status_Textblock.setReadOnly(True)
+
+# Provisioning status + toggle (right panel, same row as action buttons)
+VDI_Provisioning_Status_Label = QLabel("Provisioning: N/A", tab1)
+VDI_Provisioning_Status_Label.setGeometry(545, 402, 200, 20)
+
+VDI_Toggle_Provisioning_button = QPushButton("Enable Provisioning", tab1)
+VDI_Toggle_Provisioning_button.setGeometry(752, 396, 330, 25)
+VDI_Toggle_Provisioning_button.setEnabled(False)
+VDI_Toggle_Provisioning_button.clicked.connect(VDI_Toggle_Provisioning_button_callback)
 # endregion
 
 
@@ -1412,7 +1544,7 @@ RDS_Golden_Image_Combobox = QComboBox(tab2)
 RDS_Golden_Image_Combobox.setGeometry(10, 120, 360, 25)
 RDS_Golden_Image_Combobox.setEnabled(False)
 bind_combobox_search(RDS_Golden_Image_Combobox)
-RDS_Golden_Image_Combobox.currentIndexChanged.connect(
+RDS_Golden_Image_Combobox.activated.connect(
     lambda _: RDS_Golden_Image_Combobox_callback(None))
 
 QLabel("Snapshot", tab2).setGeometry(10, 155, 180, 20)
@@ -1496,29 +1628,38 @@ RDS_cal.setEnabled(False)
 
 # Action buttons
 RDS_Apply_Golden_Image_button = QPushButton("Apply Image", tab2)
-RDS_Apply_Golden_Image_button.setGeometry(10, 385, 120, 25)
+RDS_Apply_Golden_Image_button.setGeometry(10, 400, 120, 25)
 RDS_Apply_Golden_Image_button.setEnabled(False)
 RDS_Apply_Golden_Image_button.clicked.connect(RDS_Apply_Golden_Image_button_callback)
 
 RDS_Cancel_Secondary_Image_button = QPushButton("Cancel Image", tab2)
-RDS_Cancel_Secondary_Image_button.setGeometry(140, 385, 120, 25)
+RDS_Cancel_Secondary_Image_button.setGeometry(140, 400, 120, 25)
 RDS_Cancel_Secondary_Image_button.setEnabled(False)
 RDS_Cancel_Secondary_Image_button.clicked.connect(RDS_Cancel_Secondary_Image_button_callback)
 
 RDS_Promote_Secondary_Image_button = QPushButton("Promote Image", tab2)
-RDS_Promote_Secondary_Image_button.setGeometry(270, 385, 120, 25)
+RDS_Promote_Secondary_Image_button.setGeometry(270, 400, 120, 25)
 RDS_Promote_Secondary_Image_button.setEnabled(False)
 RDS_Promote_Secondary_Image_button.clicked.connect(RDS_Promote_Secondary_Image_button_callback)
 
 RDS_Apply_Secondary_Image_button = QPushButton("Apply Secondary", tab2)
-RDS_Apply_Secondary_Image_button.setGeometry(400, 385, 120, 25)
+RDS_Apply_Secondary_Image_button.setGeometry(400, 400, 120, 25)
 RDS_Apply_Secondary_Image_button.setEnabled(False)
 RDS_Apply_Secondary_Image_button.clicked.connect(RDS_Apply_Secondary_Image_button_callback)
 
 # Status textblock (right side)
 RDS_Status_Textblock = QPlainTextEdit(tab2)
-RDS_Status_Textblock.setGeometry(545, 10, 390, 395)
+RDS_Status_Textblock.setGeometry(545, 10, 540, 355)
 RDS_Status_Textblock.setReadOnly(True)
+
+# Provisioning status + toggle (right panel, same row as action buttons)
+RDS_Provisioning_Status_Label = QLabel("Provisioning: N/A", tab2)
+RDS_Provisioning_Status_Label.setGeometry(545, 402, 200, 20)
+
+RDS_Toggle_Provisioning_button = QPushButton("Enable Provisioning", tab2)
+RDS_Toggle_Provisioning_button.setGeometry(752, 396, 330, 25)
+RDS_Toggle_Provisioning_button.setEnabled(False)
+RDS_Toggle_Provisioning_button.clicked.connect(RDS_Toggle_Provisioning_button_callback)
 # endregion
 
 
@@ -1532,15 +1673,15 @@ config_get_password_button.setGeometry(30, 200, 150, 25)
 config_get_password_button.clicked.connect(show_password_dialog)
 
 config_reset_button = QPushButton("Reset Configuration", tab3)
-config_reset_button.setGeometry(30, 293, 150, 25)
+config_reset_button.setGeometry(30, 323, 150, 25)
 config_reset_button.clicked.connect(config_reset_button_callback)
 
 config_save_button = QPushButton("Save Configuration", tab3)
-config_save_button.setGeometry(30, 323, 150, 25)
+config_save_button.setGeometry(30, 353, 150, 25)
 config_save_button.clicked.connect(config_save_button_callback)
 
 config_test_credential_button = QPushButton("Test Credentials", tab3)
-config_test_credential_button.setGeometry(30, 353, 150, 25)
+config_test_credential_button.setGeometry(30, 383, 150, 25)
 config_test_credential_button.clicked.connect(config_test_button_callback)
 
 # Labels
@@ -1560,7 +1701,7 @@ config_loglevel_label = QLabel("Log Level", tab3)
 config_loglevel_label.setGeometry(270, 80, 150, 20)
 
 config_status_label = QLabel("Status: N/A", tab3)
-config_status_label.setGeometry(30, 400, 400, 20)
+config_status_label.setGeometry(30, 418, 400, 20)
 
 # Text inputs
 config_username_textbox = QLineEdit(tab3)
@@ -1614,6 +1755,12 @@ config_refresh_vms_snapshots_checkbox.move(30, 263)
 config_refresh_vms_snapshots_checkbox.adjustSize()
 config_refresh_vms_snapshots_checkbox.setChecked(config_refresh_vms_snapshots)
 config_refresh_vms_snapshots_checkbox.toggled.connect(config_save_button_callback)
+
+config_local_pod_only_checkbox = QCheckBox("Local Pod Only (skip multi-pod federation discovery)", tab3)
+config_local_pod_only_checkbox.move(30, 291)
+config_local_pod_only_checkbox.adjustSize()
+config_local_pod_only_checkbox.setChecked(config_local_pod_only)
+config_local_pod_only_checkbox.toggled.connect(config_save_button_callback)
 
 # endregion
 

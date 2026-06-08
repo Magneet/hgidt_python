@@ -1,4 +1,5 @@
 import json
+import math
 import requests
 import urllib
 import time
@@ -19,7 +20,7 @@ def _make_request(func, url: str, **kwargs) -> requests.Response:
         response = func(url, **kwargs)
         if response.status_code != 429:
             return response
-        retry_after = int(response.headers.get('X-Rate-Limit-Retry-After-Seconds', 5))
+        retry_after = math.ceil(float(response.headers.get('X-Rate-Limit-Retry-After-Seconds', 5)))
         logger.warning(f"Rate limited (429), retrying after {retry_after}s: {url}")
         time.sleep(retry_after)
     return response
@@ -31,6 +32,10 @@ def _get(url: str, **kwargs) -> requests.Response:
 
 def _post(url: str, **kwargs) -> requests.Response:
     return _make_request(requests.post, url, **kwargs)
+
+
+def _put(url: str, **kwargs) -> requests.Response:
+    return _make_request(requests.put, url, **kwargs)
 
 
 def _check_response(response: requests.Response, ok_status: int = 200) -> None:
@@ -476,6 +481,58 @@ class Inventory:
             verify=False, timeout=REQUEST_TIMEOUT, headers=headers, json=machine_ids, params=params)
         _check_response(response)
 
+    def set_desktop_pool_provisioning(self, pool_data: dict, enable: bool):
+        """Enables or disables provisioning for a desktop pool."""
+        spec = {
+            'cloud_assigned': pool_data.get('cloud_assigned', False),
+            'cloud_managed': pool_data.get('cloud_managed', False),
+            'display_assigned_machine_name': pool_data.get('display_assigned_machine_name', False),
+            'display_machine_alias': pool_data.get('display_machine_alias', False),
+            'display_name': pool_data.get('display_name', ''),
+            'enable_client_restrictions': pool_data.get('enable_client_restrictions', False),
+            'enabled': pool_data.get('enabled', True),
+            'enable_provisioning': enable,
+        }
+        self.update_desktop_pool(spec, pool_data['id'])
+
+    def set_farm_provisioning(self, farm_data: dict, enable: bool):
+        """Enables or disables provisioning for an RDS farm."""
+        af = farm_data.get('automated_farm_settings', {})
+        spec = {
+            'access_group_id': farm_data.get('access_group_id', ''),
+            'display_name': farm_data.get('display_name', ''),
+            'display_protocol_settings': farm_data.get('display_protocol_settings', {}),
+            'enabled': farm_data.get('enabled', True),
+            'load_balancer_settings': farm_data.get('load_balancer_settings', {}),
+            'server_error_threshold': farm_data.get('server_error_threshold', 0),
+            'session_settings': farm_data.get('session_settings', {}),
+            'use_custom_script_for_load_balancing': farm_data.get('use_custom_script_for_load_balancing', False),
+            'automated_farm_settings': {**af, 'enable_provisioning': enable},
+        }
+        self.update_farm(spec, farm_data['id'])
+
+    def update_desktop_pool(self, pool_data: dict, desktop_pool_id: str):
+        """Updates a Desktop Pool's configuration.
+
+        Requires pool_data as a dict (DesktopPoolUpdateSpecV3).
+        Available for Horizon 8 2111 and later."""
+        headers = {**self.access_token, "Content-Type": "application/json"}
+        response = _put(
+            f'{self.url}/rest/inventory/v8/desktop-pools/{desktop_pool_id}',
+            verify=False, timeout=REQUEST_TIMEOUT, headers=headers, data=json.dumps(pool_data))
+        _check_response(response, ok_status=204)
+
+    def update_farm(self, farm_data: dict, farm_id: str):
+        """Updates a Farm's configuration.
+
+        Requires farm_data as a dict (FarmUpdateSpecV5).
+        Available for Horizon 8 2111 and later."""
+        headers = {**self.access_token, "Content-Type": "application/json"}
+        response = _put(
+            f'{self.url}/rest/inventory/v7/farms/{farm_id}',
+            verify=False, timeout=REQUEST_TIMEOUT, headers=headers, data=json.dumps(farm_data))
+        _check_response(response, ok_status=204)
+
 
 class External:
     def __init__(self, url: str, access_token: dict):
@@ -518,6 +575,37 @@ class External:
         Available for Horizon 8 2006."""
         response = _get(
             f'{self.url}/rest/external/v2/base-snapshots?base_vm_id={base_vm_id}&vcenter_id={vcenter_id}',
+            verify=False, timeout=REQUEST_TIMEOUT, headers=self.access_token)
+        _check_response(response)
+        results = response.json()
+        return results if isinstance(results, list) else [results]
+
+    def get_network_labels(self, vcenter_id: str, host_or_cluster_id: str,
+                           network_type: str = "") -> list:
+        """Retrieves all network labels (portgroups) on the given host or cluster.
+
+        Requires vcenter_id and host_or_cluster_id.
+        Optional network_type: NETWORK, OPAQUE_NETWORK, DISTRUBUTED_VIRTUAL_PORT_GROUP.
+        Available for Horizon 8 2006 and later."""
+        params = f"host_or_cluster_id={host_or_cluster_id}&vcenter_id={vcenter_id}"
+        if network_type:
+            params += f"&network_type={network_type}"
+        response = _get(
+            f'{self.url}/rest/external/v1/network-labels?{params}',
+            verify=False, timeout=REQUEST_TIMEOUT, headers=self.access_token)
+        _check_response(response)
+        results = response.json()
+        return results if isinstance(results, list) else [results]
+
+    def get_network_interface_cards(self, vcenter_id: str, base_vm_id: str,
+                                    base_snapshot_id: str) -> list:
+        """Returns network interface cards suitable for configuration on a desktop pool/farm.
+
+        Requires vcenter_id, base_vm_id and base_snapshot_id.
+        Available for Horizon 8 2006 and later."""
+        response = _get(
+            f'{self.url}/rest/external/v1/network-interface-cards'
+            f'?base_snapshot_id={base_snapshot_id}&base_vm_id={base_vm_id}&vcenter_id={vcenter_id}',
             verify=False, timeout=REQUEST_TIMEOUT, headers=self.access_token)
         _check_response(response)
         results = response.json()
