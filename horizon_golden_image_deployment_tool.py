@@ -33,6 +33,7 @@ _log_handler_id = logger.add('hgidt.log', retention="10 days", rotation="50 MB",
 
 # region configuration
 # Load the config file if one exists
+#this is not needed
 CONFIG_FILE = application_name+'_config.ini'
 config = configparser.ConfigParser()
 config.read(CONFIG_FILE)
