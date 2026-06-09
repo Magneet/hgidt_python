@@ -6,22 +6,24 @@ import time
 from loguru import logger
 
 REQUEST_TIMEOUT = 30
-_MAX_RETRIES = 5
+_MAX_RETRIES = 10
 
 
 def _make_request(func, url: str, **kwargs) -> requests.Response:
     """Wraps a requests call with automatic retry on HTTP 429 (rate-limited).
 
-    Reads X-Rate-Limit-Retry-After-Seconds from the response header to
-    determine how long to wait before each retry.
+    Waits the longer of the server-supplied Retry-After header and an
+    exponential backoff (2^attempt seconds, capped at 60s) so that
+    persistent rate-limiting is handled gracefully.
     """
     logger.debug(f"[{func.__name__}] {url}")
-    for _ in range(_MAX_RETRIES):
+    for attempt in range(_MAX_RETRIES):
         response = func(url, **kwargs)
         if response.status_code != 429:
             return response
-        retry_after = math.ceil(float(response.headers.get('X-Rate-Limit-Retry-After-Seconds', 5)))
-        logger.warning(f"Rate limited (429), retrying after {retry_after}s: {url}")
+        header_wait = math.ceil(float(response.headers.get('X-Rate-Limit-Retry-After-Seconds', 5)))
+        retry_after = max(header_wait, min(2 ** attempt, 60))
+        logger.warning(f"Rate limited (429), retrying after {retry_after}s (attempt {attempt + 1}/{_MAX_RETRIES}): {url}")
         time.sleep(retry_after)
     return response
 
