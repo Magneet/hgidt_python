@@ -49,6 +49,7 @@ if 'UserInfo' in config:
     config_log_level = config.get('UserInfo', 'Log_Level', fallback='INFO')
     config_refresh_vms_snapshots = config.getboolean('UserInfo', 'Refresh_VMs_Snapshots', fallback=False)
     config_local_pod_only = config.getboolean('UserInfo', 'Local_Pod_Only', fallback=False)
+    config_vm_filter = config.get('UserInfo', 'VM_Filter', fallback='')
     try:
         config_password = keyring.get_password(
             application_name, config_username)
@@ -63,6 +64,7 @@ else:
     config_log_level = 'INFO'
     config_refresh_vms_snapshots = False
     config_local_pod_only = False
+    config_vm_filter = ''
 
 if config_log_level != 'INFO':
     logger.remove(_log_handler_id)
@@ -99,6 +101,7 @@ _config_test_worker = None
 _connect_worker = None
 _vdi_action_worker = None
 _rds_action_worker = None
+_force_full_refresh = False
 
 global_desktop_pools = []
 global_rds_farms = []
@@ -431,13 +434,14 @@ def VDI_DesktopPool_Combobox_callback(event):
         VDI_Resize_checkbox_callback()
         VDI_Golden_Image_Combobox_callback(None)
     elif instant_clone_operation == "NONE" and instant_clone_pending_image_state == "READY_HELD":
-        VDI_Cancel_Secondary_Image_button.setEnabled(True)
+        VDI_Cancel_Secondary_Image_button.setEnabled(False)
         VDI_Promote_Secondary_Image_button.setEnabled(True)
         VDI_Apply_Golden_Image_button.setEnabled(False)
         VDI_Apply_Secondary_Image_button.setEnabled(True)
         VDI_Secondary_Machine_Options_Combobox.setEnabled(True)
     elif instant_clone_operation == "SCHEDULE_PUSH_IMAGE" and instant_clone_pending_image_state != "UNPUBLISHING":
-        VDI_Cancel_Secondary_Image_button.setEnabled(True)
+        can_cancel = deployment_time == "N/A" or deployment_time > datetime.now()
+        VDI_Cancel_Secondary_Image_button.setEnabled(can_cancel)
 
 
 def VDI_Golden_Image_Combobox_callback(event):
@@ -449,9 +453,12 @@ def VDI_Golden_Image_Combobox_callback(event):
     global_vdi_selected_vm = VDI_Golden_Image_Combobox_values[VDI_Golden_Image_Combobox.currentText()]
     vcenter_id = global_vdi_selected_vm['vcenter_id']
     basevm_id = global_vdi_selected_vm['id']
-    optional_snapshots = [item for item in global_base_snapshots if item["vcenter_id"]
+    optional_snapshots = [item for item in global_base_snapshots if item.get("vcenter_id")
                           == vcenter_id and item["basevmid"] == basevm_id
                           and not item.get("incompatible_reasons")]
+    if not optional_snapshots:
+        logger.info(f"VDI: no snapshots found for VM '{global_vdi_selected_vm['name']}' (vcenter {vcenter_id})")
+        return
     VDI_Snapshot_Combobox_values = {item["name"]: item for item in optional_snapshots}
     _pool_vm_id = global_vdi_selected_pool.get("provisioning_settings", {}).get("parent_vm_id")
     _pool_snap_id = global_vdi_selected_pool.get("provisioning_settings", {}).get("base_snapshot_id")
@@ -465,9 +472,10 @@ def VDI_Golden_Image_Combobox_callback(event):
     VDI_Snapshot_Combobox.blockSignals(True)
     VDI_Snapshot_Combobox.clear()
     VDI_Snapshot_Combobox.addItems(_vdi_snap_values)
+    _vdi_snap_idx = _vdi_snap_values.index(VDI_Snapshot_Combobox__selected_default) if VDI_Snapshot_Combobox__selected_default in _vdi_snap_values else 0
+    VDI_Snapshot_Combobox.setCurrentIndex(_vdi_snap_idx)
     VDI_Snapshot_Combobox.blockSignals(False)
     VDI_Snapshot_Combobox.setEnabled(True)
-    VDI_Snapshot_Combobox.setCurrentText(VDI_Snapshot_Combobox__selected_default)
     VDI_Snapshot_Combobox_callback(None)
 
 
@@ -800,13 +808,14 @@ def RDS_Farm_Combobox_callback(event):
         RDS_Resize_checkbox_callback()
         RDS_Golden_Image_Combobox_callback(None)
     elif instant_clone_operation == "NONE" and instant_clone_pending_image_state == "READY_HELD":
-        RDS_Cancel_Secondary_Image_button.setEnabled(True)
+        RDS_Cancel_Secondary_Image_button.setEnabled(False)
         RDS_Promote_Secondary_Image_button.setEnabled(True)
         RDS_Apply_Golden_Image_button.setEnabled(False)
         RDS_Apply_Secondary_Image_button.setEnabled(True)
         RDS_Secondary_Machine_Options_Combobox.setEnabled(True)
     elif instant_clone_operation == "SCHEDULE_PUSH_IMAGE" and instant_clone_pending_image_state != "UNPUBLISHING":
-        RDS_Cancel_Secondary_Image_button.setEnabled(True)
+        can_cancel = deployment_time == "N/A" or deployment_time > datetime.now()
+        RDS_Cancel_Secondary_Image_button.setEnabled(can_cancel)
 
 
 def RDS_Golden_Image_Combobox_callback(event):
@@ -818,9 +827,12 @@ def RDS_Golden_Image_Combobox_callback(event):
     global_RDS_selected_vm = RDS_Golden_Image_Combobox_values[RDS_Golden_Image_Combobox.currentText()]
     vcenter_id = global_RDS_selected_vm['vcenter_id']
     basevm_id = global_RDS_selected_vm['id']
-    optional_snapshots = [item for item in global_base_snapshots if item["vcenter_id"]
+    optional_snapshots = [item for item in global_base_snapshots if item.get("vcenter_id")
                           == vcenter_id and item["basevmid"] == basevm_id
                           and not item.get("incompatible_reasons")]
+    if not optional_snapshots:
+        logger.info(f"RDS: no snapshots found for VM '{global_RDS_selected_vm['name']}' (vcenter {vcenter_id})")
+        return
     RDS_Snapshot_Combobox_values = {item["name"]: item for item in optional_snapshots}
     _farm_vm_id = global_RDS_selected_farm.get("automated_farm_settings", {}).get("provisioning_settings", {}).get("parent_vm_id")
     _farm_snap_id = global_RDS_selected_farm.get("automated_farm_settings", {}).get("provisioning_settings", {}).get("base_snapshot_id")
@@ -834,9 +846,10 @@ def RDS_Golden_Image_Combobox_callback(event):
     RDS_Snapshot_Combobox.blockSignals(True)
     RDS_Snapshot_Combobox.clear()
     RDS_Snapshot_Combobox.addItems(_rds_snap_values)
+    _rds_snap_idx = _rds_snap_values.index(RDS_Snapshot_Combobox__selected_default) if RDS_Snapshot_Combobox__selected_default in _rds_snap_values else 0
+    RDS_Snapshot_Combobox.setCurrentIndex(_rds_snap_idx)
     RDS_Snapshot_Combobox.blockSignals(False)
     RDS_Snapshot_Combobox.setEnabled(True)
-    RDS_Snapshot_Combobox.setCurrentText(RDS_Snapshot_Combobox__selected_default)
     RDS_Snapshot_Combobox_callback(None)
 
 
@@ -969,8 +982,9 @@ def config_conserver_combobox_callback():
 
 def config_save_button_callback():
     logger.info("Saving configuration")
-    global config_username, config_domain, config_server_name, config_password
+    global config_username, config_domain, config_server_name, config_password, config_vm_filter
     config_username = config_username_textbox.text()
+    config_vm_filter = config_vm_filter_textbox.text().strip()
     config_domain = config_domain_textbox.text()
     old_server_name = config_server_name
     config_server_name = config_conserver_combobox.currentText()
@@ -987,7 +1001,8 @@ def config_save_button_callback():
                                   'ServerName': config_server_name, 'Save_Password': str(config_save_password_checkbox.isChecked()),
                                   'Log_Level': config_log_level,
                                   'Refresh_VMs_Snapshots': str(config_refresh_vms_snapshots_checkbox.isChecked()),
-                                  'Local_Pod_Only': str(config_local_pod_only_checkbox.isChecked())}
+                                  'Local_Pod_Only': str(config_local_pod_only_checkbox.isChecked()),
+                                  'VM_Filter': config_vm_filter}
             config['Pods'] = {'Pods': config_pods}
             config['Connection_Servers'] = {
                 'Connection_Servers': config_connection_servers}
@@ -1005,13 +1020,15 @@ def config_save_button_callback():
                     "Password could not be saved to the credentials store")
         config_status_label.setText("Configuration saved")
         logger.info("Configuration saved")
-        if old_server_name != config_server_name and VDI_Connect_Button.text() == "Refresh":
+        if old_server_name != config_server_name:
+            global _force_full_refresh
+            _force_full_refresh = True
             _reset_to_disconnected_state()
 
 
 def config_reset_button_callback():
     logger.info("Resetting configuration")
-    global config_username, config_domain, config_server_name, config_password, config_url
+    global config_username, config_domain, config_server_name, config_password, config_url, config_vm_filter
     config_reset_stored_password()
     del config_password
     config_password = None
@@ -1037,6 +1054,9 @@ def config_reset_button_callback():
         os.remove(CONFIG_FILE)
     config_loglevel_combobox.setCurrentText('INFO')
     config_loglevel_combobox_callback(None)
+    config_vm_filter_textbox.clear()
+    config_vm_filter = ''
+    _reset_to_disconnected_state()
     config_status_label.setText(
         "Configuration reset and configuration file deleted.")
     logger.info("Configuration reset")
@@ -1117,7 +1137,8 @@ class ConnectWorker(QThread):
             config_pods, config_connection_servers,
             config_username, config_domain, config_password,
             on_status=lambda msg: self.status_updated.emit(msg),
-            include_vms_snapshots=self._include_vms_snapshots)
+            include_vms_snapshots=self._include_vms_snapshots,
+            vm_filter=config_vm_filter)
         self.data_loaded.emit(data)
 
 
@@ -1160,8 +1181,10 @@ def generic_Connect_Button_callback():
     VDI_Statusbox_Label.setText("Connecting")
     RDS_Statusbox_Label.setText("Connecting")
 
+    global _force_full_refresh
     is_refresh = VDI_Connect_Button.text() == "Refresh"
-    include_vms = not is_refresh or config_refresh_vms_snapshots_checkbox.isChecked()
+    include_vms = not is_refresh or config_refresh_vms_snapshots_checkbox.isChecked() or _force_full_refresh
+    _force_full_refresh = False
     _connect_worker = ConnectWorker(include_vms_snapshots=include_vms)
     _connect_worker.status_updated.connect(_on_connect_status)
     _connect_worker.data_loaded.connect(_on_connect_finished)
@@ -1389,7 +1412,7 @@ VDI_DesktopPool_Combobox = QComboBox(tab1)
 VDI_DesktopPool_Combobox.setGeometry(10, 65, 360, 25)
 VDI_DesktopPool_Combobox.setEnabled(False)
 bind_combobox_search(VDI_DesktopPool_Combobox)
-VDI_DesktopPool_Combobox.currentIndexChanged.connect(
+VDI_DesktopPool_Combobox.activated.connect(
     lambda _: VDI_DesktopPool_Combobox_callback(None))
 
 QLabel("Golden Image", tab1).setGeometry(10, 100, 180, 20)
@@ -1537,7 +1560,7 @@ RDS_Farm_Combobox = QComboBox(tab2)
 RDS_Farm_Combobox.setGeometry(10, 65, 360, 25)
 RDS_Farm_Combobox.setEnabled(False)
 bind_combobox_search(RDS_Farm_Combobox)
-RDS_Farm_Combobox.currentIndexChanged.connect(
+RDS_Farm_Combobox.activated.connect(
     lambda _: RDS_Farm_Combobox_callback(None))
 
 QLabel("Golden Image", tab2).setGeometry(10, 100, 180, 20)
@@ -1701,6 +1724,9 @@ config_domain_label.setGeometry(30, 140, 150, 20)
 config_loglevel_label = QLabel("Log Level", tab3)
 config_loglevel_label.setGeometry(270, 80, 150, 20)
 
+config_vm_filter_label = QLabel("VM Name Filter (comma-separated partial matches, case-insensitive)", tab3)
+config_vm_filter_label.setGeometry(430, 80, 600, 20)
+
 config_status_label = QLabel("Status: N/A", tab3)
 config_status_label.setGeometry(30, 418, 400, 20)
 
@@ -1716,6 +1742,12 @@ config_domain_textbox.setGeometry(30, 165, 150, 25)
 config_domain_textbox.setPlaceholderText("Domain")
 if config_domain is not None:
     config_domain_textbox.setText(config_domain)
+
+config_vm_filter_textbox = QLineEdit(tab3)
+config_vm_filter_textbox.setGeometry(430, 105, 600, 25)
+config_vm_filter_textbox.setPlaceholderText("e.g. win11-gold, server2022 (leave empty to fetch all)")
+if config_vm_filter:
+    config_vm_filter_textbox.setText(config_vm_filter)
 
 # ComboBoxes
 config_loglevel_combobox = QComboBox(tab3)

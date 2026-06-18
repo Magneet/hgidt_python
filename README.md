@@ -38,6 +38,7 @@ A desktop application for managing VMware Horizon instant-clone desktop pools an
 | Log Level | Controls log verbosity (`INFO` is recommended for normal use) |
 | Refresh Golden Images & Snapshots | When enabled, the Connect/Refresh button also reloads the base VM and snapshot lists. Disable this for faster refreshes when you only need to update pool settings |
 | Local Pod Only | Skip CPA federation discovery and work with the local Horizon pod only. Useful when federation is not configured or the CPA API is unavailable |
+| VM Name Filter | Comma-separated list of partial VM name matches (case-insensitive). When set, snapshot data is only fetched for VMs whose names contain at least one of the terms (e.g. `win11-gold, server2022`). All VMs still appear in the VM picker; this filter only limits which ones have their snapshots loaded, which speeds up the initial connect when there are many VMs in vCenter. Leave empty to fetch snapshots for all VMs |
 
 After filling in the fields:
 1. Click **Set Password** and enter your password.
@@ -131,6 +132,29 @@ Outputs:
 | `installer/Horizon_Golden_Image_Deployment_Tool_v1.0.0_macOS.dmg` | DMG ready to distribute |
 
 > **Note:** Because the app is not signed with an Apple Developer certificate, macOS will show a Gatekeeper warning on first launch. Right-click the `.app` and choose **Open**, then confirm the prompt.
+
+---
+
+### Linux
+
+**Prerequisites:** Python 3.11+, a running display server (X11 or Wayland), and the Qt XCB platform plugin dependencies (`libxcb`, `libxkbcommon`, etc. — usually already present on a desktop system).
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+chmod +x build_linux.sh
+./build_linux.sh
+```
+
+Outputs:
+
+| Path | Description |
+|---|---|
+| `dist/Horizon Golden Image Deployment Tool/` | Standalone folder — copy it anywhere and run `Horizon Golden Image Deployment Tool` directly |
+| `installer/Horizon_Golden_Image_Deployment_Tool_v1.0.0_Linux.zip` | ZIP of the above folder, ready to distribute |
+
+> **Note:** The tool stores passwords via the `keyring` library, which requires a running keyring daemon (GNOME Keyring or KWallet). On systems without one the password-save feature is silently skipped — the app still works, you will just need to re-enter your password each session.
 
 ---
 

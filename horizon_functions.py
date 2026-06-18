@@ -559,28 +559,49 @@ class External:
 
         Requires vcenter_id, optionally datacenter_id and since Horizon 2012 filter_incompatible_vms (defaults to None / not sent).
         Available for Horizon 7.12 and later and Horizon 8 2012 for filter_incompatible_vms."""
-        params = {"vcenter_id": vcenter_id}
+        page_size = 500
+        params = {"vcenter_id": vcenter_id, "size": page_size}
         if isinstance(filter_incompatible_vms, bool):
             params["filter_incompatible_vms"] = "true" if filter_incompatible_vms else "false"
         if datacenter_id:
             params["datacenter_id"] = datacenter_id
-        url = f'{self.url}/rest/external/v3/base-vms?' + urllib.parse.urlencode(params)
-        response = _get(url, verify=False, timeout=REQUEST_TIMEOUT, headers=self.access_token)
-        _check_response(response)
-        results = response.json()
-        return results if isinstance(results, list) else [results]
+        all_results = []
+        page = 1
+        while True:
+            params["page"] = page
+            url = f'{self.url}/rest/external/v3/base-vms?' + urllib.parse.urlencode(params)
+            response = _get(url, verify=False, timeout=REQUEST_TIMEOUT, headers=self.access_token)
+            _check_response(response)
+            batch = response.json()
+            if not isinstance(batch, list):
+                batch = [batch]
+            all_results.extend(batch)
+            if len(batch) < page_size:
+                break
+            page += 1
+        return all_results
 
     def get_base_snapshots(self, vcenter_id: str, base_vm_id: str) -> list:
         """Lists all the VM snapshots from the vCenter for a given VM.
 
         Requires vcenter_id and base_vm_id
         Available for Horizon 8 2006."""
-        response = _get(
-            f'{self.url}/rest/external/v2/base-snapshots?base_vm_id={base_vm_id}&vcenter_id={vcenter_id}',
-            verify=False, timeout=REQUEST_TIMEOUT, headers=self.access_token)
-        _check_response(response)
-        results = response.json()
-        return results if isinstance(results, list) else [results]
+        page_size = 500
+        all_results = []
+        page = 1
+        while True:
+            url = (f'{self.url}/rest/external/v2/base-snapshots?'
+                   f'base_vm_id={base_vm_id}&vcenter_id={vcenter_id}&page={page}&size={page_size}')
+            response = _get(url, verify=False, timeout=REQUEST_TIMEOUT, headers=self.access_token)
+            _check_response(response)
+            batch = response.json()
+            if not isinstance(batch, list):
+                batch = [batch]
+            all_results.extend(batch)
+            if len(batch) < page_size:
+                break
+            page += 1
+        return all_results
 
     def get_network_labels(self, vcenter_id: str, host_or_cluster_id: str,
                            network_type: str = "") -> list:

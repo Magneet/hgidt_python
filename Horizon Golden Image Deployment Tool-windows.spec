@@ -1,0 +1,59 @@
+# -*- mode: python ; coding: utf-8 -*-
+# Windows spec — produces a single-folder distribution with an .exe.
+# Build with:  pyinstaller "Horizon Golden Image Deployment Tool-windows.spec"
+
+a = Analysis(
+    ['horizon_golden_image_deployment_tool.py'],
+    pathex=[],
+    binaries=[],
+    datas=[
+        ('logo.ico', '.'),
+    ],
+    hiddenimports=[
+        'requests',
+        'horizon_functions',
+        'horizon_app',
+        'keyring',
+        'keyring.backends',
+        'loguru',
+        'PySide6.QtWidgets',
+        'PySide6.QtCore',
+        'PySide6.QtGui',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='Horizon Golden Image Deployment Tool',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='logo.ico',
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='Horizon Golden Image Deployment Tool',
+)

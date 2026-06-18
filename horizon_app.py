@@ -92,10 +92,11 @@ def _fetch_vm_snapshots(args):
     basevm['snapshotcount'] = len(snaps)
     for snap in snaps:
         snap['basevmid'] = basevm['id']
+        snap.setdefault('vcenter_id', vcenter_id)
     return basevm, snaps
 
 
-def load_environment_data(pods, connection_servers, username, domain, password, on_status=None, include_vms_snapshots=True):
+def load_environment_data(pods, connection_servers, username, domain, password, on_status=None, include_vms_snapshots=True, vm_filter=''):
     """Load all Horizon environment data needed by the UI.
 
     Returns a dict with keys: desktop_pools, rds_farms, base_vms,
@@ -175,11 +176,18 @@ def load_environment_data(pods, connection_servers, username, domain, password, 
                                 vm['incompatible_reasons'] = []
                             vm['pod'] = pod
 
-                        logger.info(f"Fetching snapshots for {len(raw_vms)} VMs in parallel")
-                        if on_status:
-                            on_status(f"Fetching snapshots for {len(raw_vms)} VMs in {datacenter['name']}")
+                        filter_terms = [t.strip().lower() for t in vm_filter.split(',') if t.strip()] if vm_filter else []
+                        if filter_terms:
+                            vms_for_snapshots = [vm for vm in raw_vms if any(t in vm['name'].lower() for t in filter_terms)]
+                            logger.info(f"VM filter '{vm_filter}' matched {len(vms_for_snapshots)}/{len(raw_vms)} VMs for snapshot fetch")
+                        else:
+                            vms_for_snapshots = raw_vms
 
-                        args = [(vm, external, vcenter['id']) for vm in raw_vms]
+                        logger.info(f"Fetching snapshots for {len(vms_for_snapshots)} VMs in parallel")
+                        if on_status:
+                            on_status(f"Fetching snapshots for {len(vms_for_snapshots)} VMs in {datacenter['name']}")
+
+                        args = [(vm, external, vcenter['id']) for vm in vms_for_snapshots]
                         with ThreadPoolExecutor(max_workers=5) as executor:
                             results = list(executor.map(_fetch_vm_snapshots, args))
 
