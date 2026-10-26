@@ -102,6 +102,8 @@ _connect_worker = None
 _vdi_action_worker = None
 _rds_action_worker = None
 _force_full_refresh = False
+# Server the currently loaded pods/data belong to; the server box may change before save/test
+_applied_server_name = config_server_name
 
 global_desktop_pools = []
 global_rds_farms = []
@@ -986,7 +988,6 @@ def config_save_button_callback():
     config_username = config_username_textbox.text()
     config_vm_filter = config_vm_filter_textbox.text().strip()
     config_domain = config_domain_textbox.text()
-    old_server_name = config_server_name
     config_server_name = config_conserver_combobox.currentText()
     if not config_username or not config_domain or not config_server_name or config_password is None:
         config_username = None
@@ -1020,8 +1021,10 @@ def config_save_button_callback():
                     "Password could not be saved to the credentials store")
         config_status_label.setText("Configuration saved")
         logger.info("Configuration saved")
-        if old_server_name != config_server_name:
-            global _force_full_refresh
+        global _applied_server_name, _force_full_refresh
+        if _applied_server_name != config_server_name:
+            logger.info(f"Connection server changed from {_applied_server_name} to {config_server_name}, resetting")
+            _applied_server_name = config_server_name
             _force_full_refresh = True
             _reset_to_disconnected_state()
 
